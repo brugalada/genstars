@@ -5,3 +5,7 @@
 .DS_Store
 genstars
 .ipynb_checkpoints/
+log_test.txt
+log.txt
+output_files/
+temp.dat

@@ -2406,6 +2406,7 @@ int main(int argc,char **argv)
       }
       free (rhoD_S[i]    );
       free (cumu_rho_S[i]);
+      free (ibinptiles_S[i]);
       free (cumu_P_EJKs[i]);
     }
     free (rhoD_S    );

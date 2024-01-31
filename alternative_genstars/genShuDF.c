@@ -2117,303 +2117,69 @@ int main(int argc,char **argv)
   //   printf("icomp= %d Minv= %.10f\n",icomp,Minvs[icomp]);
   // }
 
-    // set y0d for disk normalize
-  y0d[0] = (DISK == 1) ? exp(-R0/Rd[0] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[0]);
-  y0d[1] = (DISK == 1) ? exp(-R0/Rd[1] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[1]);
-  y0d[2] = (DISK == 1) ? exp(-R0/Rd[2] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[2]);
 
-  // normalize ND mass before go into loop
-  double MND;
-  int NSD = getOptiond(argc,argv,"NSD",   1,   3); // 0: wo nuclear disk, 1: w/ nuclear disk by P17, 2: w/ Sormani+21-like NSD
-                                                   // 3: w/ more Sormani+21-like NSD (use input_files/NSD_moments.dat)
-  if (NSD == 1){ // Consider Portail+17's NSD
-    MND  = 2.0e+09;
-    x0ND = 250;
-    y0ND = 125;
-    z0ND =  50;
-  }
-  if (NSD == 2){ // Consider Sormani+21-like NSD
-    MND  = 7.0e+08;
-    x0ND =  74;
-    y0ND =  74;
-    z0ND =  26;
-  }
-  x0ND  = getOptiond(argc,argv,"x0ND",  1, x0ND); 
-  y0ND  = getOptiond(argc,argv,"y0ND",  1, y0ND); 
-  z0ND  = getOptiond(argc,argv,"z0ND",  1, z0ND); 
-  MND   = getOptiond(argc,argv,"MND" ,  1,  MND); 
-  if (NSD > 0){
-    rho0ND = (NSD == 3) ? 1 : 0.25*MND/PI/x0ND/y0ND/z0ND; // Msun/pc^3 is given by calc_rho_each when ND == 3
-    n0MSND = rho0ND * fND_MS * m2nND_MS; // number density of ND MS stars
-    n0RGND = n0MSND * nMS2nRGND; // number density of ND RG stars (for mu calculation)
-    n0ND   = n0MSND + rho0ND * (1 - fND_MS) * m2nND_WD; // number density of ND MS+WD stars
-  }
-  nzND = (zenND - zstND)/dzND + 1.5;
-  nRND = (RenND - RstND)/dRND + 1.5;
-  if (NSD == 3){ // More Sormani+21-like NSD, Use input_files/NSD_moments.dat 
-    logrhoNDs   = (double**)malloc(sizeof(double *) * nzND);
-    vphiNDs     = (double**)malloc(sizeof(double *) * nzND);
-    corRzNDs    = (double**)malloc(sizeof(double *) * nzND);
-    logsigvNDs  = (double***)malloc(sizeof(double *) * nzND);
-    for (int i=0; i<nzND; i++){
-      logrhoNDs[i] = (double*)calloc(nRND, sizeof(double *));
-      vphiNDs[i]   = (double*)calloc(nRND, sizeof(double *));
-      corRzNDs[i]  = (double*)calloc(nRND, sizeof(double *));
-      logsigvNDs[i] = (double**)malloc(sizeof(double *) * nRND);
-      for (int j=0; j<nRND; j++){
-        logsigvNDs[i][j] = (double*)calloc(3, sizeof(double *)); // 3= phi, R, z
+  // Store Cumu P_Shu
+  int nfg = 100;
+  int nz = (zenShu - zstShu)/dzShu + 1;
+  int nR = (RenShu - RstShu)/dRShu + 1;
+  int ndisk = 8;
+  fgsShu      = (double****)malloc(sizeof(double *) * nz);
+  PRRgShus    = (double****)malloc(sizeof(double *) * nz);
+  cumu_PRRgs  = (double****)malloc(sizeof(double *) * nz);
+  n_fgsShu  = (int***)malloc(sizeof(int *) * nz);
+  kptiles   = (int****)malloc(sizeof(int *) * nz);
+  for (int i=0; i<nz; i++){
+    fgsShu[i]  = (double***)malloc(sizeof(double *) * nR);
+    PRRgShus[i] = (double***)malloc(sizeof(double *) * nR);
+    cumu_PRRgs[i] = (double***)malloc(sizeof(double *) * nR);
+    n_fgsShu[i]  = (int**)malloc(sizeof(int *) * nR);
+    kptiles[i]   = (int***)malloc(sizeof(int *) * nR);
+    for (int j=0; j<nR; j++){
+      fgsShu[i][j]  = (double**)malloc(sizeof(double *) * ndisk);
+      PRRgShus[i][j] = (double**)malloc(sizeof(double *) * ndisk);
+      cumu_PRRgs[i][j] = (double**)malloc(sizeof(double *) * ndisk);
+      kptiles[i][j] = (int**)malloc(sizeof(int *) * ndisk);
+      n_fgsShu[i][j]  = (int*)calloc(ndisk, sizeof(int *));
+      for (int k=0; k<ndisk; k++){
+        fgsShu[i][j][k]   = (double*)calloc(nfg, sizeof(double *));
+        PRRgShus[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+        cumu_PRRgs[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+        kptiles[i][j][k]  = (int*)calloc(22, sizeof(int *));
       }
     }
-    char *fileND = (char*)"input_files/NSD_moments.dat";
-    void store_NSDmoments(char *infile);
-    store_NSDmoments(fileND);
   }
-
-  // normalize NSC mass before go into loop
-  NSC = getOptiond(argc,argv,"NSC",   1,   0); // 0: wo nuclear star cluster, 1: w/ nuclear star cluster
-  double MNSC = getOptiond(argc,argv,"MNSC" ,  1, 6.1e+07); // Chatzopoulos+15
-  if (NSC > 0){
-    // use same conversion factors as NSD's
-    rho0NSC = (3-gammaNSC)*0.25*MNSC/PI/qNSC; // Msun, not Msun/pc^3
-    n0MSNSC = rho0NSC * fND_MS * m2nND_MS; // number density of NSC MS stars
-    n0RGNSC = n0MSNSC * nMS2nRGND; // number density of NSC RG stars (for mu calculation)
-    n0NSC   = n0MSNSC + rho0NSC * (1 - fND_MS) * m2nND_WD; // number density of NSC MS+WD stars
-    // printf ("NSC: rho= %",);
-  }
-
-  // Read input parameters for loop
-  int    Dmax    = getOptiond(argc,argv,"Dmax", 1, 16000);
-  double fSIMU    = getOptiond(argc,argv,"fSIMU",  1, 0.01); // Default NSIMU = fSIMU x [star count]
-  int VERBOSITY   = getOptiond(argc,argv,"VERBOSITY",  1, 0);
-  int BINARY      = getOptiond(argc,argv,"BINARY",   1,  0);
-  int EXTLAW      = getOptiond(argc,argv,"EXTLAW",   1,  1);
-  int EXTMAP      = getOptiond(argc,argv,"EXTMAP",   1,  1); // Default set to be 1 for public version.
-  if (EXTMAP == 0)
-    EXTMAP = 1;  // EXTMAP == 0 is unavailable in the public version because the extinction map is too heavy to be controlled under git
-  // long   NSIMU    = getOptionl(argc,argv,"NSIMU",  1, 0); // Default: NSIMU = fSIMU x [star count]
-  long   NSIMU    = 0; // Default: NSIMU = fSIMU x [star count]
-  double lst   = getOptiond(argc,argv,"l",  1,  1.875);
-  double len   = getOptiond(argc,argv,"l",  2,  2.125);
-  double bst   = getOptiond(argc,argv,"b",  1, -1.625);
-  double ben   = getOptiond(argc,argv,"b",  2, -1.375);
-  if (lst >= len || bst >= ben){
-    printf ("lst (bst) has to be < len (ben)!\n");
-    exit(1);
-  }
-  if (lst < -9.5 || len > 9.5 || bst < -10.0 || ben > 4.5){
-    printf ("The Gonzalez+12 extinction map covers -9.5 < l < 9.5 and -10 < b < 4.5, and does not cover the (part of) input area!\n");
-    exit(1);
-  }
-  printf("#-------------- Input parameters ---------------\n");
-  printf("#    CenSgrA= %d     (0: GC at (l,b)=(0,0), 1: GC at (l,b)= (%.3f, %.3f))\n", CenSgrA, lSgrA, bSgrA);
-  // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyzSgrA[0], xyzSgrA[1], xyzSgrA[2]);
-  printf("#      ROMAN= %d     (0: use VIJHKs and hybrid mass-lumi rel., 1: use JHKsZ086W146F213 and isochrone mass-lumi rel.\n", ROMAN);
-  if (ROMAN == 1)
-    printf("#       iMag= %d     (0: J, 1: H, 2: Ks, 3: Z086, 4: W146, 5: F213)\n", iMag);
-  else
-    printf("#       iMag= %d     (0: V, 1: I, 2: J, 3: H, 4: Ks)\n", iMag);
-  printf("#        NSC= %d     (0: no NSC, 1: Chatzopoulos+15's NSC)\n", NSC);
-  printf("#        NSD= %d     (0: no NSD, 1: Portail+17's NSD, 2: Sormani+22-like NSD, 3: Use Sormani+22's DF's moments)\n", NSD);
-  printf("#     EXTLAW= %d     (0: Alonso-Garcia+17's ext. law , 1: Nishiyama+09's ext. law , 2: Wang&Chen19's law)\n", EXTLAW);
-  printf("#     EXTMAP= %d     (0: 0.0025x0.0025 deg^2 (slowest, unavailable in the public ver.), 1: 0.005x0.005 deg^2, 2: 0.025x0.025 deg^2 (fastest))\n", EXTMAP);
-  printf("#     BINARY= %d     (0: no binary , 1: with binary )\n", BINARY);
-  printf("#  VERBOSITY= %d     (0: no output , 1: output , 2: more output, 3: 2+each extinction)\n", VERBOSITY);
-  printf("#       seed= %ld    (random seed value )\n", seed0);
-  if (NSIMU == 0) printf("#      fSIMU= %.4f  (NSIMU propto AREA*fSIMU )\n", fSIMU);
-
-  // Read Gonzalez+12 extintion map and generate stars each grid inside the input area
-  char line[1000];
-  char *words[105];
-  FILE *fp;
-  char *fileEJK;
-  fileEJK = (EXTMAP == 0) ? "input_files/EJK_G12_S20.dat"    // High resolution (0.0025 x 0.0025 deg^2)
-                          : "input_files/EJK_G12_S20_LR.dat"; // Low resolution (0.005 x 0.005 deg^2 or 0.025 x 0.025 deg^2)
-  if((fp=fopen(fileEJK,"r"))==NULL){
-    printf("can't open %s\n",fileEJK);
-    exit(1);
-  }
-  double dlEJK = 0.025, dbEJK = 0.025; // have to same as the bin width of $fileEJK
-  double dlhalf = 0.5*dlEJK, dbhalf= 0.5*dbEJK;
-  lDs        = (double *)malloc(sizeof(double *) * 1);
-  bDs        = (double *)malloc(sizeof(double *) * 1);
-  double elongation(double azi1, double alt1, double azi2, double alt2);
-  printf("#---- Read extinction map and generate stars each grid ( %.3f x %.3f ) inside %.3f < l < %.3f , %.3f < b < %.3f ----\n",dlEJK,dbEJK,lst,len,bst,ben);
-  int igrids = 0;
-  double allmass = 0, allstars = 0;
-  double ncntall = 0, ncnts = 0, ncntbWD = 0, ncntbCD = 0;
-  double ncntcomp[12] = {}; // should be > ncomp. Prepare 12 just in case
-  double nBD = 0, nMS = 0, nWD = 0, nNS= 0, nBH =  0;
-  int nerror = 0;
-  while (fgets(line,1000,fp) !=NULL){
-    int nwords = split((char*)" ", line, words);
-    if (*words[0] == '#') continue;
-    double lSIMU = atof(words[0]);
-    double bSIMU = atof(words[1]);
-    double ERR  = 1e-10;
-
-    double l1 = (lSIMU - dlhalf);
-    double l2 = (lSIMU + dlhalf);
-    double b1 = (bSIMU - dbhalf);
-    double b2 = (bSIMU + dbhalf);
-    if (l2 - ERR  <= lst || l1 + ERR >= len || b2 - ERR <= bst || b1 + ERR >= ben) continue;
-
-    // Store EJKs within ll < l < lr, bb < b < bt
-    // Some grids are further divided into 100 (EXTMAP==0) or 25 (EXTMAP==1) subgrids by Surot+20
-    double EJKs[101] = {}, areaEJKs[101] = {}, sumareaEJK = 0;
-    double lcens[101] = {}, bcens[101] = {}, dls[101] = {}, dbs[101] = {};
-    int nEJK = 0;
-    double dlEJKsub = (EXTMAP == 0) ? 0.0025 : 0.005;
-    double dbEJKsub = (EXTMAP == 0) ? 0.0025 : 0.005;
-    int nlsub = dlEJK / dlEJKsub + 0.5;
-    int nbsub = dbEJK / dbEJKsub + 0.5;
-    double EJKmax = -99, EJKmin = 99;
-    areaEJKs[nEJK] = 1;
-    sumareaEJK = 1;
-    EJKs[nEJK] = atof(words[2]);
-    nEJK++;
-
-    // Consider Nuclear Disk if  (y, z) reaches (125, 50) x 5 (= 625, 250) at 8 kpc
-    ND = (fabs(lSIMU) < 5 && fabs(bSIMU) < 2) ? NSD : 0;
-
-    //------- Set extinction parameters -----------
-    double DMrc = 14.3955 - 0.0239 * lSIMU + 0.0122*fabs(bSIMU)+0.128; // Eqs(2)-(3) of Nataf+16 
-    lDs[0]    = lSIMU; //
-    bDs[0]    = bSIMU; //
-    int idata = 0;
-    double cosb = cos(bDs[idata]/180.0*PI), sinb = sin(bDs[idata]/180.0*PI), 
-           cosl = cos(lDs[idata]/180.0*PI), sinl = sin(lDs[idata]/180.0*PI);
-    double hscale = 164.0/(fabs(sinb) + 0.0001);  // 164 pc = dust scale height from Nataf+13
-    double Dmean  = pow(10, 0.2*DMrc) * 10;
-    // Calc Alams. Alams refers to A_lambda/E(J-Ks) at this moment
-    //
-    void getEJK2Alams(int EXTLAW, int nlams, double *EJK2Alams, double *lameff, double l, double b);
-    double *Alams;
-    Alams = (double *)calloc(nband, sizeof(double *));
-    getEJK2Alams(EXTLAW, nband, Alams, lameff, lSIMU, bSIMU); // put A_lambda/E(J-Ks) in Alams
-    double AIrc = Alams[iMag]; // AIrc refers to A_iMag/E(J-Ks)
-    for (int j = 0; j < nband; j++){
-      // printf("Alam[%d]/E(J-Ks)= %f\n",j,Alams[j]);
-      Alams[j] /= (1 - exp(-Dmean/hscale));
-    }
-    double AI0  = Alams[iMag]; // 
-
-    //------- Store cumu_rho for each ith comp as a function of distance -----------
-    void calc_rho_each(double D, int idata, double *rhos, double *xyz, double *xyb);  // return rho for each component 
-    double xyz[3] = {}, xyb[2] = {};
-    int  nbin = (NSC > 0 && fabs(lSIMU) < 0.15 && fabs(bSIMU) < 0.10) ? 1.0*Dmax+0.5 
-              : (ND > 0 && fabs(lSIMU) < 0.05 && fabs(bSIMU) < 0.05) ? 0.20*Dmax+0.5 
-              : (ND > 0 && fabs(lSIMU) < 0.10 && fabs(bSIMU) < 0.10) ? 0.10*Dmax+0.5
-              : (ND > 0) ? 0.04*Dmax+0.5 
-              : 0.01*Dmax+0.5;
-    double dD = (double) Dmax/nbin;
-    // Lens   : include REMNANT, mass basis 
-    // Source : only stars, number basis 
-    double *D, **rhoD_S, **cumu_rho_S, *cumu_rho_all_S, *rhos, ***cumu_P_EJKs;
-    D               = (double *)calloc(nbin+1, sizeof(double *));
-    cumu_rho_all_S  = (double *)calloc(nbin+1, sizeof(double *));
-    rhos        = (double *)calloc(ncomp+1, sizeof(double *)); // +1 for NSC
-    rhoD_S      = (double **)malloc(sizeof(double *) * ncomp);
-    cumu_rho_S  = (double **)malloc(sizeof(double *) * ncomp);
-    cumu_P_EJKs = (double ***)malloc(sizeof(double *) * ncomp);
-    for (int i=0; i<ncomp; i++){
-      rhoD_S[i]     = (double *)calloc(nbin+1, sizeof(double *));
-      cumu_rho_S[i] = (double *)calloc(nbin+2, sizeof(double *));
-      cumu_P_EJKs[i] = (double **)malloc(sizeof(double *) * (nbin + 1));
-      for (int j=0; j<nbin+1; j++){
-        cumu_P_EJKs[i][j] = (double *)calloc(nEJK, sizeof(double *));
-      }
-    }
-    double fLF_detect(int nMIs, double Magst, double dMag, double extI, double Imin, double Imax, int idisk);
-    // printf("#----- Number density (min^-2) distribution along (l, b)=( %.3f , %.3f )--------\n",lSIMU,bSIMU);
-    int npri = 10;
-    double SumNSD = 0, SumNSC = 0;
-    for (int ibin=0; ibin<=nbin; ibin++){
-      D[ibin] = (double) ibin/nbin * Dmax;
-      calc_rho_each(D[ibin], idata, rhos, xyz, xyb);
-      double R = sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1]);
-      // if (ibin%npri ==0) printf ("# %5.0f %5.0f %5.0f \n",D[ibin],R,xyz[2]);
-      double rhosum = 0;
-      double DM  = 5 * log10(0.1*(D[ibin] + 0.1));
-      double EJK2AI  =  AI0 * (1 - exp(-D[ibin]/hscale));
-      // if (R < 100) printf ("%.0f %.0f %.5e %.5e\n",R,xyz[2],n0MSND*rhos[9],n0MSNSC*rhos[10]);
-      SumNSD += n0MSND*rhos[9];
-      SumNSC += n0MSNSC*rhos[10];
-      // if (R < 100) printf ("%.0f %.0f %.5e %.5e\n",R,xyz[2],rho0ND*rhos[9],rho0NSC*rhos[10]);
-      for (int i=0;i<ncomp;i++){
-        double nMS = (i == 8) ? n0MSb*rhos[8] : (i == 9) ? n0MSND*rhos[9] + n0MSNSC*rhos[10] : n0MSd[i]*rhos[i];
-        double rho = (i == 8) ? n0b  *rhos[8] : (i == 9) ? n0ND  *rhos[9] + n0NSC  *rhos[10] : n0d[i]  *rhos[i];
-        if (Isen - Isst > 0){ // if Magrange is given
-          rhoD_S[i][ibin] = nMS * D[ibin] * D[ibin] * STR2MIN2;
-          double fIs = 0, sumwtEJK = 0;
-          double fac2int = -1;
-          for (int iEJK = 0; iEJK < nEJK; iEJK++){
-            double extI = EJK2AI*EJKs[iEJK] + DM;
-            double fIsEJK = areaEJKs[iEJK] * fLF_detect(nMIs, Magst, dMag, extI, Isst, Isen, i);
-            fIs += fIsEJK;
-            if (fIsEJK > 0 && fac2int == -1){
-              fac2int = 1/fIsEJK; // to avoid round error due to too small value
-            }
-            cumu_P_EJKs[i][ibin][iEJK] = fac2int*fIs;  // if (ran < cumu_P_EJKs[iEJK]) ilb = iEJK
-          }
-          rhoD_S[i][ibin] *= fIs / sumareaEJK;
-          // printf (" %.5f,%i,%i,%.5f,%.5f, %.5e\n",fIs,i,ibin,n0MSd[i],rhos[i],rhoD_S[i][ibin]);
-        }else{ // For lens catalog
-          rhoD_S[i][ibin] = rho * D[ibin] * D[ibin] * STR2MIN2;
-          for (int iEJK = 0; iEJK < nEJK; iEJK++){
-            cumu_P_EJKs[i][ibin][iEJK] = (iEJK == 0) ? areaEJKs[iEJK]
-                                       : areaEJKs[iEJK] + cumu_P_EJKs[i][ibin][iEJK-1];
-          }
-        }
-        cumu_rho_S[i][ibin]  = (ibin==0) ? 0 : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD; // not accurate, but to let cumu_rho_S has the same number of arrays
-        // cumu_rho_S[i][ibin]  = (ibin==0) ? 0.5*rhoD_S[i][ibin]*dD : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD;
-        cumu_rho_all_S[ibin] += cumu_rho_S[i][ibin];
-        rhosum += rhoD_S[i][ibin];
-        // if (ibin%npri==0){ 
-        //   printf (" %d: %.1e ",i,rhoD_S[i][ibin]);
-        //   printf ("( %.2e )",cumu_rho_S[i][ibin]);
-        // }
-      }
-      // printf ("\n");
-      // if (ibin%npri==0){ 
-      //     printf (" All: %.1e ",rhosum);
-      //     printf ("( %.2e )\n",cumu_rho_all_S[ibin]);
-      // }
-    }
-    // printf ("# SumNSD= %.5e SumNSC= %.5e NSC/NSD= %.8f\n",SumNSD, SumNSC,SumNSC/SumNSD);
-
-    char filename[60];
-    sprintf(filename, "output_files/distance_dist_l%.4f_b%.4f_EJKs%.3f.csv", lSIMU, bSIMU,EJKs[0]);
-    FILE *file = fopen(filename,"w");
-    if (file == NULL){
-      printf("Problem");
-    }
-    printf("rhoD_S and cumu_rho_S start: (l,b) = (%.4f,%.4f)\n",lSIMU,bSIMU);
-    for (int i=0;i<ncomp;i++){
-      for (int j=0;j<nbin+1;j++){
-        fprintf(file,"%i,%i,%.4f,%.4f\n",i,j,rhoD_S[i][j],cumu_rho_S[i][j]);
-      }
-    }
-    printf("rhoD_S and cumu_rho_S end\n\n");
-    fclose(file);
-
+  char *fileVc = (char*)"input_files/Rotcurve_BG16.dat";
+  void store_cumuP_Shu(char *infile);
+  store_cumuP_Shu(fileVc);
     
-    free (Alams);  
-    free (D);  
-    free (cumu_rho_all_S);
-    for (int i=0; i<ncomp; i++){
-      for (int j=0; j<nbin+1; j++){
-        free (cumu_P_EJKs[i][j]);
+  //for (int i=0; i<nz; i++){
+  //  for (int j=0; j<nR; j++){
+  //    n_fgsShu[i][j]  = (int*)calloc(ndisk, sizeof(int *));
+  //      for (int k=0; k<ndisk; k++){
+  //        fgsShu[i][j][k]   = (double*)calloc(nfg, sizeof(double *));
+  //        PRRgShus[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+  //        cumu_PRRgs[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+  //        kptiles[i][j][k]  = (int*)calloc(22, sizeof(int *));
+  //      }
+  //  }
+  //}
+
+  printf("fgsShu start\n");
+  printf("%i,%i,%i,%i\n",nz,nR,ndisk,nfg);
+  for (int i=0; i<nz; i++){
+    for (int j=0; j<nR; j++){
+      for (int k=0; k<ndisk; k++){
+        // printf("N(%i,%i,%i) = %i\n",i,j,k,n_fgsShu[i][j][k]);
+        for (int kk=0; kk<n_fgsShu[i][j][k];kk++){
+          printf("%i,%i,%i,%i,%.4f,%.4f,%.4f\n",i,j,k,kk,fgsShu[i][j][k][kk],cumu_PRRgs[i][j][k][kk],PRRgShus[i][j][k][kk]);
+        }
       }
-      free (rhoD_S[i]    );
-      free (cumu_rho_S[i]);
-      free (cumu_P_EJKs[i]);
     }
-    free (rhoD_S    );
-    free (cumu_rho_S);
-    free (cumu_P_EJKs);
-    igrids++;
   }
-  fclose(fp);
+  printf("fgsShu end\n");
+    
+ 
+ 
   // printf ("# sumM_MS/sumN_MS= %9.2f / %6.0f = %.6f Msun/*\n", allmass, allstars, allmass/allstars);
   // printf ("# nerror= %d\n", nerror);
   // if (BINARY == 1) printf ("# (n_single n_binwide n_binclose)/n_all= ( %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f )\n", ncnts, ncntbWD, ncntbCD, ncntall,ncnts/ncntall,ncntbWD/ncntall,ncntbCD/ncntall);
@@ -2425,28 +2191,38 @@ int main(int argc,char **argv)
     }
     free(CumuN_MIs);
   }
-  if (NSD == 3){
-    for (int i=0; i<nzND; i++){
-      for (int j=0; j<nRND; j++){
-        free(logsigvNDs[i][j]);
-      }
-      free(logrhoNDs[i]);
-      free(vphiNDs[i]);
-      free(corRzNDs[i]);
-      free(logsigvNDs[i]);
-    }
-    free(logrhoNDs);
-    free(vphiNDs);
-    free(corRzNDs);
-    free(logsigvNDs);
-  }
+  
   free(logMass_B       );
   free(PlogM_cum_norm_B);
   free(PlogM_B         );
   free(imptiles_B      );
   free(lDs);
   free(bDs);
-  
+  for (int i=0; i<nz; i++){
+    for (int j=0; j<nR; j++){
+      for (int k=0; k<ndisk; k++){
+        free(fgsShu[i][j][k]);
+        free(PRRgShus[i][j][k]);
+        free(cumu_PRRgs[i][j][k]);
+        free(kptiles[i][j][k]);
+      }
+      free(fgsShu[i][j]);
+      free(PRRgShus[i][j]);
+      free(cumu_PRRgs[i][j]);
+      free(kptiles[i][j]);
+      free(n_fgsShu[i][j]);
+    }
+    free(fgsShu[i]);
+    free(PRRgShus[i]);
+    free(cumu_PRRgs[i]);
+    free(kptiles[i]);
+    free(n_fgsShu[i]);
+  }
+  free(fgsShu);
+  free(PRRgShus);
+  free(cumu_PRRgs);
+  free(kptiles);
+  free(n_fgsShu);
   for (int i=0; i<ncomp; i++){
     free(Minis[i]);
     free(MPDs[i]);

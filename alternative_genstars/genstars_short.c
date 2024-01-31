@@ -2117,10 +2117,116 @@ int main(int argc,char **argv)
   //   printf("icomp= %d Minv= %.10f\n",icomp,Minvs[icomp]);
   // }
 
-    // set y0d for disk normalize
+
+  // Store Cumu P_Shu
+  int nfg = 100;
+  int nz = (zenShu - zstShu)/dzShu + 1;
+  int nR = (RenShu - RstShu)/dRShu + 1;
+  int ndisk = 8;
+  fgsShu      = (double****)malloc(sizeof(double *) * nz);
+  PRRgShus    = (double****)malloc(sizeof(double *) * nz);
+  cumu_PRRgs  = (double****)malloc(sizeof(double *) * nz);
+  n_fgsShu  = (int***)malloc(sizeof(int *) * nz);
+  kptiles   = (int****)malloc(sizeof(int *) * nz);
+  for (int i=0; i<nz; i++){
+    fgsShu[i]  = (double***)malloc(sizeof(double *) * nR);
+    PRRgShus[i] = (double***)malloc(sizeof(double *) * nR);
+    cumu_PRRgs[i] = (double***)malloc(sizeof(double *) * nR);
+    n_fgsShu[i]  = (int**)malloc(sizeof(int *) * nR);
+    kptiles[i]   = (int***)malloc(sizeof(int *) * nR);
+    for (int j=0; j<nR; j++){
+      fgsShu[i][j]  = (double**)malloc(sizeof(double *) * ndisk);
+      PRRgShus[i][j] = (double**)malloc(sizeof(double *) * ndisk);
+      cumu_PRRgs[i][j] = (double**)malloc(sizeof(double *) * ndisk);
+      kptiles[i][j] = (int**)malloc(sizeof(int *) * ndisk);
+      n_fgsShu[i][j]  = (int*)calloc(ndisk, sizeof(int *));
+      for (int k=0; k<ndisk; k++){
+        fgsShu[i][j][k]   = (double*)calloc(nfg, sizeof(double *));
+        PRRgShus[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+        cumu_PRRgs[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+        kptiles[i][j][k]  = (int*)calloc(22, sizeof(int *));
+      }
+    }
+  }
+  char *fileVc = (char*)"input_files/Rotcurve_BG16.dat";
+  void store_cumuP_Shu(char *infile);
+  store_cumuP_Shu(fileVc);
+
+  // set y0d for disk normalize
   y0d[0] = (DISK == 1) ? exp(-R0/Rd[0] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[0]);
   y0d[1] = (DISK == 1) ? exp(-R0/Rd[1] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[1]);
   y0d[2] = (DISK == 1) ? exp(-R0/Rd[2] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[2]);
+
+  // Print input parameters as header 
+  printf("#   Output of \"./genstars ");
+  for (int i=1;i<argc;i++) {
+    printf("%s", argv[i]);
+    if (i < argc - 1) {
+      printf(" ");
+    }
+  }
+  printf("\"\n");
+  printf("#---------- Parameters for IMF and Sun ----------\n");
+  printf("#      IMF:  alpha0= %5.2f ( %.2f <M< %.2f ),\n",alpha0_B,M0_B,Mu);
+  printf("#            alpha1= %5.2f ( %.2f <M< %.2f ),\n",alpha1_B,M1_B,M0_B); 
+  printf("#            alpha2= %5.2f ( %.2f <M< %.2f ),\n",alpha2_B,M2_B,M1_B); 
+  printf("#            alpha3= %5.2f ( %.2f <M< %.2f ),\n",alpha3_B,M3_B,M2_B); 
+  printf("#            alpha4= %5.2f ( %.5f <M< %.5f )\n",alpha4_B,Ml,M3_B);
+  printf("#         (R, z)sun= (%5.0f, %5.0f) pc\n",R0,zsun);
+  printf("#   (vx, vy, vz)sun= (%5.1f, %5.1f, %4.1f) km/s\n",vxsun,vysun,vzsun);
+  printf("#------------ Disk model: (DISK, hDISK, tSFR)= ( %d , %d , %.1f Gyr ) --------------\n",DISK, hDISK,tSFR);
+  printf("#            tau   Rd  zd zd45 sigU0 sigW0  RsigU  RsigW    rho0        n0     n0WD \n");
+  printf("#            Gyr   pc  pc   pc  km/s  km/s     pc     pc  Msun/pc^3  */pc^3   */pc^3\n");
+  double MVVVd = 0;  // mass in the VVV box when DISK == 2
+  double Mind = 0;  // mass of inner disk (< Rbreak) when DISK == 2
+  for (int i = 0; i< ndisk; i++){
+    int rd = (i == 0) ? Rd[0] : (i < 7) ? Rd[1] : (i == 7) ? Rd[2] : 0;
+    int zdtmp = (hDISK == 0) ? zd[i] : zd45[i];
+    double MVVVtmp = 0;
+    // if (DISK == 2){ // same normalization also when DISK != 2
+      MVVVtmp = rho0d[i] * exp((R0 - Rdbreak)/rd) * 2200*2 * 1400*2 * zd[i] / zdtmp;
+      double ztmp    = 1200.0/zdtmp;  // z of VVV box
+      Mind    += 2 * zdtmp * MVVVtmp / 4400 / 2800 * PI * Rdbreak * Rdbreak;
+      MVVVtmp *= (i < 7) ? 2 * zdtmp * (exp(2*ztmp) - 1)/(exp(2*ztmp) + 1)  
+                         : 2 * zdtmp * (1 - exp(-ztmp));
+      MVVVd   += MVVVtmp;
+    // }
+    double hsigU = (i < 7) ? hsigUt : hsigUT;
+    double hsigW = (i < 7) ? hsigWt : hsigWT;
+    double sigW0 = (i < 7) ? sigW10d * pow((medtauds[i]+0.01)/10.01, betaW) : sigW0td;
+    double sigU0 = (i < 7) ? sigU10d * pow((medtauds[i]+0.01)/10.01, betaU) : sigU0td;
+    printf ("#   Disk%d: %5.2f %4d %3.0f  %3d %5.2f %5.2f %6.0f %6.0f   %.2e %.2e %.2e\n",i+1,medtauds[i], rd, zd[i],zdtmp,sigU0,sigW0,hsigU,hsigW,rho0d[i],n0d[i],n0d[i]-n0MSd[i]);
+  }
+
+  // Crude normalize bulge mass
+  double crude_integrate(double xmax, double ymax, double zmax, int nbun);
+  double massVVVbox = crude_integrate(2200, 1400, 1200, 15); // VVV box defined by Wegg & Gerhard (2013), MNRAS, 435, 1874
+  double massentire = crude_integrate(6000, 3000, 3000, 30); // should include entire bulge
+  double fm1 = 1, fmX = 0;
+  if (addX >= 5){
+    int addXtmp = addX;
+    addX = 0;
+    double mass1all = crude_integrate(6000, 3000, 3000, 30);
+    addX = addXtmp;
+    fm1 = mass1all / massentire;
+    fmX = 1 - fm1;
+  }  
+  double MVVVP17 = 1.32e+10;
+  rho0b = (frho0b * MVVVP17 - MVVVd)/massVVVbox; // normalized by mass in the VVV box by Portail et al. (2017), MNRAS, 465, 1621
+  n0MSb = rho0b * fb_MS * m2nb_MS; // number density of bar MS stars
+  n0RGb = n0MSb * nMS2nRGb; // number density of bar RG stars (for mu calculation)
+  n0b   = n0MSb + rho0b * (1 - fb_MS) * m2nb_WD; // number density of b MS+WD stars
+  massVVVbox *= rho0b;
+  massentire *= rho0b;
+
+  printf("#------------------ Bulge model: (alpha_bar, Mbar, Mind, MVVVb, MVVVd) = ( %.1f deg, %.2e Msun, %.2e Msun, %.2e Msun, %.2e Msun) ---------------------\n",thetaD,massentire,Mind,massVVVbox,MVVVd);
+  printf("#   (M_MS, M_REM)ave= (%.6f %.6f) Msun/*, fM_REM= %.4f, Mass/RG= %5.1f Msun/RG \n",1/m2nb_MS,1/m2nb_WD,1-fb_MS,1/fb_MS/m2nb_MS/nMS2nRGb);
+  printf("#   rho%d: M= %.2e Msun, rho0b= %5.2f Msun/pc^3, (x0, y0, z0, Rc)= (%4.0f, %4.0f, %3.0f, %4.0f) pc, (C1, C2,   C3)= (%.1f, %.1f, %.1f)\n",model,fm1*massentire,rho0b,x0_1,y0_1,z0_1,Rc,C1,C2,C3);
+  if (addX >= 5) printf("#     X%d: M= %.2e Msun, rho0X= %5.2f Msun/pc^3, (x0, y0, z0, Rc)= (%4.0f, %4.0f, %3.0f, %4.0f) pc, (C1, C2, b_zX)= (%.1f, %.1f, %.1f)\n",addX,fmX*massentire,rho0b*fX,x0_X,y0_X,z0_X,Rc_X,C1_X,C2_X,b_zX);
+  printf("#   (Omega_p, vx_str)= ( %.1f km/s/kpc, %3.0f[1 - e^{-(|yb|/%4.0f)^2}] km/s ),",Omega_p,vx_str,y0_str);
+  printf(" sig0+1(xb, yb, zb)= (%3.0f+%3.0f, %3.0f+%3.0f, %3.0f+%3.0f) km/s\n",sigx_vb,sigx_vb0,sigy_vb,sigy_vb0,sigz_vb,sigz_vb0);
+  printf("#   sigR%d: (x0, y0, z0)= (%5.0f, %5.0f, %5.0f) pc, (C1, C2, C3)= (%.1f, %.1f, %.1f)\n",model_vb,x0_vb,y0_vb,z0_vb,C1_vb,C2_vb,C3_vb);
+  printf("#   sigZ%d: (x0, y0, z0)= (%5.0f, %5.0f, %5.0f) pc, (C1, C2, C3)= (%.1f, %.1f, %.1f)\n",model_vbz,x0_vbz,y0_vbz,z0_vbz,C1_vbz,C2_vbz,C3_vbz);
 
   // normalize ND mass before go into loop
   double MND;
@@ -2250,12 +2356,28 @@ int main(int argc,char **argv)
     double lSIMU = atof(words[0]);
     double bSIMU = atof(words[1]);
     double ERR  = 1e-10;
-
     double l1 = (lSIMU - dlhalf);
     double l2 = (lSIMU + dlhalf);
     double b1 = (bSIMU - dbhalf);
     double b2 = (bSIMU + dbhalf);
     if (l2 - ERR  <= lst || l1 + ERR >= len || b2 - ERR <= bst || b1 + ERR >= ben) continue;
+    // printf("%.20f %.20f %.12f %.12f %.12f %.12f %.12f %.12f\n",l2,lst,l1,len,b2,bst,b1,ben);
+    // printf("%.4f %.4f %.4f %.4f\n",lSIMU,bSIMU,EJK,EJK*EJK2AH);
+    // Calc area of each grid
+    double ll = (l1 < lst) ? lst  //  far left  grid
+              : l1;
+    double lr = (l2 > len) ? len  //  far right grid
+              : l2;
+    double bb = (b1 < bst) ? bst  //  bottom  grid
+              : b1;
+    double bt = (b2 > ben) ? ben  //  top     grid
+              : b2;
+    double lcen = 0.5 * (ll + lr);
+    double bcen = 0.5 * (bb + bt);
+    // printf ("%f %f %f %f\n",ll, lr, bb, bt);
+    double dl = elongation(ll,   bcen, lr, bcen);
+    double db = elongation(lcen, bb, lcen, bt);
+    double AREA = dl * db * 3600; // deg^2 -> arcmin^2
 
     // Store EJKs within ll < l < lr, bb < b < bt
     // Some grids are further divided into 100 (EXTMAP==0) or 25 (EXTMAP==1) subgrids by Surot+20
@@ -2267,10 +2389,53 @@ int main(int argc,char **argv)
     int nlsub = dlEJK / dlEJKsub + 0.5;
     int nbsub = dbEJK / dbEJKsub + 0.5;
     double EJKmax = -99, EJKmin = 99;
-    areaEJKs[nEJK] = 1;
-    sumareaEJK = 1;
-    EJKs[nEJK] = atof(words[2]);
-    nEJK++;
+    for (int ijk=2; ijk < nwords; ijk++){
+      if (ijk > 2 && EXTMAP == 2) break; // Just use ejk_mean when EXTMAP == 2
+      if (nwords > 4 && EXTMAP < 2){
+        if (ijk == 2) continue; // Skip mean E(J-Ks)
+        int il = (ijk - 3) / nlsub;
+        int ib = (ijk - 3) % nbsub;
+        double l1sub = l1 + il * dlEJKsub;
+        double l2sub = l1sub   + dlEJKsub;
+        double b1sub = b1 + ib * dbEJKsub;
+        double b2sub = b1sub   + dbEJKsub;
+        if (l2sub - ERR <= ll || l1sub + ERR >= lr || b2sub - ERR <= bb || b1sub + ERR >= bt) continue;
+        double llsub = (l1sub < ll) ? ll  //  far left  grid
+                     : l1sub;
+        double lrsub = (l2sub > lr) ? lr  //  far right grid
+                     : l2sub;
+        double bbsub = (b1sub < bb) ? bb  //  bottom  grid
+                     : b1sub;
+        double btsub = (b2sub > bt) ? bt  //  top     grid
+                     : b2sub;
+        dls[nEJK] = (lrsub - llsub);
+        dbs[nEJK] = (btsub - bbsub);
+        lcens[nEJK] = 0.5 * (llsub + lrsub);
+        bcens[nEJK] = 0.5 * (bbsub + btsub);
+        // printf ("(llsub, l1sub, ll)=  (%.15f, %.15f, %.15f)\n",llsub, l1sub, ll);
+        // printf ("(lrsub, l2sub, lr)=  (%.15f, %.15f, %.15f)\n",lrsub, l2sub, lr);
+        // printf ("(bbsub, b1sub, bb)=  (%.15f, %.15f, %.15f)\n",bbsub, b1sub, bb);
+        // printf ("(btsub, b2sub, bt)=  (%.15f, %.15f, %.15f)\n",btsub, b2sub, bt);
+        // printf ("lcen= 0.5 * ( %f + %f ) = %f\n",llsub, lrsub, lcens[nEJK]);
+        // printf ("bcen= 0.5 * ( %f + %f ) = %f\n",bbsub, btsub, bcens[nEJK]);
+        // double dlsub= elongation(llsub,   bcensub, lrsub, bcensub);
+        // double dbsub= elongation(lcensub, bbsub, lcensub, btsub);
+        areaEJKs[nEJK] = (dls[nEJK]/dlEJKsub) * (dbs[nEJK]/dbEJKsub) ; // deg^2 -> arcmin^2
+        sumareaEJK += areaEJKs[nEJK];
+      }else{ // just take mean 
+        dls[nEJK] = dl;
+        dbs[nEJK] = db;
+        lcens[nEJK] = lcen;
+        bcens[nEJK] = bcen;
+        areaEJKs[nEJK] = 1;
+        sumareaEJK = 1;
+      }
+      EJKs[nEJK] = atof(words[ijk]);
+      // printf ("%8.5f %8.5f %f\n",lcens[nEJK], bcens[nEJK], EJKs[nEJK]);
+      if (EJKs[nEJK] > EJKmax) EJKmax = EJKs[nEJK];
+      if (EJKs[nEJK] < EJKmin) EJKmin = EJKs[nEJK];
+      nEJK++;
+    }
 
     // Consider Nuclear Disk if  (y, z) reaches (125, 50) x 5 (= 625, 250) at 8 kpc
     ND = (fabs(lSIMU) < 5 && fabs(bSIMU) < 2) ? NSD : 0;
@@ -2331,7 +2496,7 @@ int main(int argc,char **argv)
       D[ibin] = (double) ibin/nbin * Dmax;
       calc_rho_each(D[ibin], idata, rhos, xyz, xyb);
       double R = sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1]);
-      // if (ibin%npri ==0) printf ("# %5.0f %5.0f %5.0f \n",D[ibin],R,xyz[2]);
+      // if (ibin%npri ==0) printf ("# %5.0f %5.0f %5.0f ",D[ibin],R,xyz[2]);
       double rhosum = 0;
       double DM  = 5 * log10(0.1*(D[ibin] + 0.1));
       double EJK2AI  =  AI0 * (1 - exp(-D[ibin]/hscale));
@@ -2356,7 +2521,7 @@ int main(int argc,char **argv)
             cumu_P_EJKs[i][ibin][iEJK] = fac2int*fIs;  // if (ran < cumu_P_EJKs[iEJK]) ilb = iEJK
           }
           rhoD_S[i][ibin] *= fIs / sumareaEJK;
-          // printf (" %.5f,%i,%i,%.5f,%.5f, %.5e\n",fIs,i,ibin,n0MSd[i],rhos[i],rhoD_S[i][ibin]);
+          // printf (" %.5f %.5e",fIs,rhoD_S[i][ibin]);
         }else{ // For lens catalog
           rhoD_S[i][ibin] = rho * D[ibin] * D[ibin] * STR2MIN2;
           for (int iEJK = 0; iEJK < nEJK; iEJK++){
@@ -2380,22 +2545,194 @@ int main(int argc,char **argv)
       // }
     }
     // printf ("# SumNSD= %.5e SumNSC= %.5e NSC/NSD= %.8f\n",SumNSD, SumNSC,SumNSC/SumNSD);
-
-    char filename[60];
-    sprintf(filename, "output_files/distance_dist_l%.4f_b%.4f_EJKs%.3f.csv", lSIMU, bSIMU,EJKs[0]);
-    FILE *file = fopen(filename,"w");
-    if (file == NULL){
-      printf("Problem");
+    int **ibinptiles_S;
+    ibinptiles_S  = (int **)malloc(sizeof(int *) * ncomp);
+    for (int i=0; i<ncomp; i++){
+      ibinptiles_S[i] = (int *)calloc(22, sizeof(int *));
     }
-    printf("rhoD_S and cumu_rho_S start: (l,b) = (%.4f,%.4f)\n",lSIMU,bSIMU);
+    for (int i=0;i<ncomp;i++){
+      // Store percentiles
+      double norm_S = cumu_rho_S[i][nbin];
+      if (norm_S == 0 && i == 9) continue;
+      for (int ibin=0; ibin<=nbin;ibin++){
+        double Pnorm_S = cumu_rho_S[i][ibin] / norm_S;
+        int intp_S = Pnorm_S*20;
+        if (ibinptiles_S[i][intp_S] == 0) ibinptiles_S[i][intp_S] = (intp_S==0) ? 1 : ibin+0.5;
+      }
+
+    }
+
+    printf("cumu_rho_S start\n");
     for (int i=0;i<ncomp;i++){
       for (int j=0;j<nbin+1;j++){
-        fprintf(file,"%i,%i,%.4f,%.4f\n",i,j,rhoD_S[i][j],cumu_rho_S[i][j]);
+        if (j<nbin){
+          printf("%.4f,",cumu_rho_S[i][j]);
+        }
+        else{
+          printf("%.4f\n",cumu_rho_S[i][j]);
+        }
+        
       }
     }
-    printf("rhoD_S and cumu_rho_S end\n\n");
-    fclose(file);
+    printf("cumu_rho_S end\n\n");
 
+
+    printf("rhoD_S start\n");
+    for (int i=0;i<ncomp;i++){
+      for (int j=0;j<nbin;j++){
+        if (j<nbin-1){
+          printf("%.4f,",rhoD_S[i][j]);
+        }
+        else{
+          printf("%.4f\n",rhoD_S[i][j]);
+        }
+        
+      }
+    }
+    printf("rhoD_S end\n\n");
+
+    printf("cumu_rho_all_S start\n");
+    for (int j=0;j<nbin;j++){
+      if (j<nbin-1){
+        printf("%.4f,",cumu_rho_all_S[j]);
+      }
+      else{
+        printf("%.4f\n",cumu_rho_all_S[j]);
+      }
+      
+
+    }
+    printf("cumu_rho_all_S end\n\n");
+
+    printf("ibinptiles_S start\n");
+    for (int i=0;i<ncomp;i++){
+      for (int j=0;j<21;j++){
+        if (j<21-1){
+          printf("%i,",ibinptiles_S[i][j]);
+        }
+        else{
+          printf("%i\n",ibinptiles_S[i][j]);
+        }
+        
+
+      }
+    }
+    printf("ibinptiles_S end\n\n");
+
+    printf("imptiles_B start\n");
+    for (int j=0;j<21;j++){
+      if (j<21-1){
+        printf("%i,",imptiles_B[j]);
+      }
+      else{
+        printf("%i\n",imptiles_B[j]);
+      }
+    }
+    printf("imptiles_B end\n\n");
+
+    printf("nEJK\n");
+    printf("%i\n",nEJK);
+
+    printf("EJKs start\n");
+    for (int k=0;k<nEJK;k++){
+      if (k<nEJK-1){
+        printf("%.3f,",EJKs[k]);
+      }
+      else{
+        printf("%.3f\n",EJKs[k]);
+      }
+    }
+    printf("EJKs end\n");
+
+    
+    // for (int i=0; i<nz; i++){
+    //   for (int j=0; j<nR; j++){
+    //     n_fgsShu[i][j]  = (int*)calloc(ndisk, sizeof(int *));
+    //     for (int k=0; k<ndisk; k++){
+    //       fgsShu[i][j][k]   = (double*)calloc(nfg, sizeof(double *));
+    //       PRRgShus[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+    //       cumu_PRRgs[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+    //       kptiles[i][j][k]  = (int*)calloc(22, sizeof(int *));
+    //     }
+    //   }
+    // }
+
+    printf("fgsShu start\n");
+    printf("%i,%i,%i,%i\n",nz,nR,ndisk,nfg);
+    // for (int i=0; i<nz; i++){
+    //   for (int j=0; j<nR; j++){
+    //     for (int k=0; k<ndisk; k++){
+    //       for (int kk=0; kk<nfg;k++){
+    //         printf("%.4f",fgsShu[i][j][k][kk]);
+    //       }
+    //     }
+    //   }
+    // }
+    
+    printf("fgsShu end\n");
+
+
+
+
+
+    /*** Monte Carlo simulation ***/
+
+    NSIMU = AREA*cumu_rho_all_S[nbin]*fSIMU + 0.5;
+
+    // dl *= sqrt(fSIMU); // Consider AREA as fSIMU*AREA
+    // db *= sqrt(fSIMU); // Consider AREA as fSIMU*AREA
+
+    printf ("#\n# %dth grid: (l, b, A%src_range, AREA, nEJK)= ( %.4f deg, %.4f deg, %.2f - %.2f mag, %.2f x %.3f min^2, %3d )\n",igrids,MAG[iMag],lSIMU, bSIMU,AIrc*EJKmin,AIrc*EJKmax, AREA,fSIMU,nEJK);
+    if (Isen - Isst > 0){
+      printf ("#   %ld (= %.3e min^-2 x %.2f min^2 x %.3f ) stars in %.2f < %s < %.2f up to %d pc will be simulated.\n",NSIMU,cumu_rho_all_S[nbin],AREA,fSIMU,Isst,MAG[iMag],Isen, Dmax);
+    }else{
+      printf ("#   %ld (= %.3e min^-2 x %.2f min^2 x %.3f ) stars incl. WD, NS, BH in all mag range up to %d pc will be simulated.\n",NSIMU, cumu_rho_all_S[nbin],AREA,fSIMU, Dmax);
+    }
+    printf("#   (A%s0_range, Dmean, hscale)= ( %.2f - %.2f mag, %.0f pc, %.0f pc)\n",MAG[iMag],AI0*EJKmin,AI0*EJKmax,Dmean,hscale);
+    if (NSIMU == 0){
+      printf ("# NSIMU = %ld. Consider to increase fSIMU if AHrc is not very large. Skip.\n",NSIMU);
+      free (Alams);  
+      free (D);  
+      free (cumu_rho_all_S);
+      for (int i=0; i<ncomp; i++){
+        for (int j=0; j<nbin+1; j++){
+          free (cumu_P_EJKs[i][j]);
+        }
+        free (rhoD_S[i]    );
+        free (cumu_rho_S[i]);
+        free (ibinptiles_S[i]);
+        free (cumu_P_EJKs[i]);
+      }
+      free (rhoD_S    );
+      free (cumu_rho_S);
+      free (ibinptiles_S);
+      free (cumu_P_EJKs);
+      igrids++;
+      continue;
+    }
+    double getcumu2xist (int n, double *x, double *F, double *f, double Freq, int ist, int inv);
+    if (VERBOSITY >= 1){ 
+      if (HWBAND)
+        printf("# Hw-mag %4s-mag", MAG[0]);
+      else
+        printf("# %2s-mag", MAG[0]);
+      for (int iband=1; iband < nband; iband++){
+        printf (" %4s-mag", MAG[iband]);
+      }
+      if (VERBOSITY == 3){
+        for (int iband=0; iband < nband; iband++){
+          printf ("  A%-4s", MAG[iband]);
+        }
+        printf ("        Mass      Radius   Dist.      mu_l      mu_b            l            b cls fREM");
+      }else{
+        printf ("        Mass      Radius   Dist.      mu_l      mu_b  A%-4s            l            b cls fREM", MAG[iMag]);
+      }
+    }
+    if (VERBOSITY >= 2) printf ("   InitialMass      v_x      v_y      v_z");
+    if (VERBOSITY >= 1 && BINARY    == 1) printf ("         q2         aL     aLpmin BL");
+    if (VERBOSITY >= 1) printf ("\n");
+    
+    // gsl_rng_free(r);
     
     free (Alams);  
     free (D);  
@@ -2406,10 +2743,12 @@ int main(int argc,char **argv)
       }
       free (rhoD_S[i]    );
       free (cumu_rho_S[i]);
+      free (ibinptiles_S[i]);
       free (cumu_P_EJKs[i]);
     }
     free (rhoD_S    );
     free (cumu_rho_S);
+    free (ibinptiles_S);
     free (cumu_P_EJKs);
     igrids++;
   }
@@ -2446,7 +2785,31 @@ int main(int argc,char **argv)
   free(imptiles_B      );
   free(lDs);
   free(bDs);
-  
+  for (int i=0; i<nz; i++){
+    for (int j=0; j<nR; j++){
+      for (int k=0; k<ndisk; k++){
+        free(fgsShu[i][j][k]);
+        free(PRRgShus[i][j][k]);
+        free(cumu_PRRgs[i][j][k]);
+        free(kptiles[i][j][k]);
+      }
+      free(fgsShu[i][j]);
+      free(PRRgShus[i][j]);
+      free(cumu_PRRgs[i][j]);
+      free(kptiles[i][j]);
+      free(n_fgsShu[i][j]);
+    }
+    free(fgsShu[i]);
+    free(PRRgShus[i]);
+    free(cumu_PRRgs[i]);
+    free(kptiles[i]);
+    free(n_fgsShu[i]);
+  }
+  free(fgsShu);
+  free(PRRgShus);
+  free(cumu_PRRgs);
+  free(kptiles);
+  free(n_fgsShu);
   for (int i=0; i<ncomp; i++){
     free(Minis[i]);
     free(MPDs[i]);
