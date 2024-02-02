@@ -6,5 +6,6 @@
 char* getOptions(int argc, char *argv[], const char *argname, int argno, char *def_word);
 int getOptioni(int argc, char *argv[], const char *argname, int argno, int def_value);
 double getOptiond(int argc, char *argv[], const char *argname, int argno, double def_value);
+char* getOptionc(int argc, char *argv[], const char *argname, int argno, char *def_value);
 
 int split(char *splitw, const char *s, char *word[]);

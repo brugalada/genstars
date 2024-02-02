@@ -1,6 +1,12 @@
 #include "option.h"
 
-
+//------------------------------------------------------------------------
+char* getOptionc(int argc, char *argv[], const char *argname, int argno, char *def_value)
+{
+   char *word = getOptions(argc, argv, argname, argno, "undef");
+   if (!strcmp(word, "undef")) return def_value;
+   else return word;
+}
 //------------------------------------------------------------------------
 long getOptionl(int argc, char *argv[], const char *argname, int argno, long def_value)
 {

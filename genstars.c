@@ -196,7 +196,1248 @@ double interp_xy(int nx, int ny, double **F, double xst, double yst, double dx, 
 void   interp_xy_coeff(int nx, int ny, double *as, double xst, double yst, double dx, double dy, double xreq, double yreq);
 void Dlb2xyz(double D, double lD, double bD, double Rsun, double *xyz);
 
+int main(int argc,char **argv)
+{
+  //--- read parameters ---
+  long seed    = getOptioni(argc,argv,"seed", 1, 12304357); // seed of random number
+  gsl_rng_env_setup();
+  T = gsl_rng_default;
+  r = gsl_rng_alloc (T);
+  gsl_rng_set(r, seed); 
+  long seed0 = seed;
+  //--- Set params for Galactic model (default: E+E_X model in Koshimoto+2021) ---
+  double M0_B      = getOptiond(argc,argv,"M0", 1, 1.0);
+  double M1_B      = getOptiond(argc,argv,"M1", 1, 0.859770466578045);
+  double M2_B      = getOptiond(argc,argv,"M2", 1, 0.08);
+  double M3_B      = getOptiond(argc,argv,"M3", 1, 0.01);
+  double Ml        = getOptiond(argc,argv,"Ml", 1, 0.001); // default : w/o planetary mass
+  double Mu        = getOptiond(argc,argv,"Mu", 1, 120); // need to be fixed!!!. Affect normalizing bulge coeffs 
+  double alpha1_B  = getOptiond(argc,argv,"alpha1", 1, -2.32279457078378);
+  double alpha2_B  = getOptiond(argc,argv,"alpha2", 1, -1.13449983242887);
+  double alpha3_B  = getOptiond(argc,argv,"alpha3", 1, -0.175862190587576);
+  double alpha0_B  = getOptiond(argc,argv,"alpha0", 1,  alpha1_B);
+  double alpha4_B  = getOptiond(argc,argv,"alpha4", 1,  alpha3_B);
+  DISK     = getOptiond(argc,argv,"DISK",   1,    2); // 0: wo disk, 1: w/ disk+hole, 2: w/ disk like P17
+  rhot0    = getOptiond(argc,argv,"rhot0",   1,   0.042); // local thin disk density, Msun/pc^3 (Bovy17: 0.042 +- 0.002 incl.BD)
+  hDISK     = getOptiond(argc,argv,"hDISK",  1,    0); // 0: const scale height, 1: linear scale height
+  addX      = getOptiond(argc,argv,"addX",   1,    5); // 0: no X-shape,  >=5: use model==addX as X-shape 
+  model     = getOptiond(argc,argv,"model",  1,    5); // 
+  R0     = getOptiond(argc,argv,"R0",     1,   8160); // 
+  thetaD = getOptiond(argc,argv,"thetaD", 1,     27); // 
+  frho0b = getOptiond(argc,argv,"frho0b", 1,  0.839014514507754); // 
+  Rc     = getOptiond(argc,argv,"Rc", 1,  2631.78535429573); //
+  zb_c   = getOptiond(argc,argv,"zb_c", 1,  1e+6); //
+  if (model >= 4 && model <= 8){
+    x0_1     = getOptiond(argc,argv,"x0", 1,  930.623146993329); // 
+    y0_1     = getOptiond(argc,argv,"y0", 1,  370.784386649364); // 
+    z0_1     = getOptiond(argc,argv,"z0", 1,  239.547516030578); // 
+    C1     = getOptiond(argc,argv,"C1", 1,  1.20011972384328); // 
+    C2     = getOptiond(argc,argv,"C2", 1,  4.09326795684828); // 
+    C3     = getOptiond(argc,argv,"C3", 1,  1.0000); // 
+  }
+  if (addX >= 5){
+    x0_X = getOptiond(argc,argv,"x0_X", 1,  278.027059842233); // 
+    y0_X = getOptiond(argc,argv,"y0_X", 1,  176.318528789193); // 
+    z0_X = getOptiond(argc,argv,"z0_X", 1,  286.791941602401); // 
+    C1_X = getOptiond(argc,argv,"C1_X", 1,  1.3087131258784); // 
+    C2_X = getOptiond(argc,argv,"C2_X", 1,  2.21745322869032); // 
+    b_zX = getOptiond(argc,argv,"b_zX", 1,  1.37774815817195); // b_zX, slope of "X" of X-shape
+    fX   = getOptiond(argc,argv,"fX",   1,  1.43975636704683); // fraction of X-shape
+    Rc_X = getOptiond(argc,argv,"Rc_X",  1,  1301.63829617294); // 
+  }
+  b_zY   = getOptiond(argc,argv,"b_zY", 1, 0); //
 
+  // ----- Kinematic parameters ------
+  // for bar kinematic
+  Omega_p  = getOptiond(argc,argv,"Omega_p",  1, 47.4105844018699);
+  model_vb = getOptiond(argc,argv,"model_vb", 1,    5); // 
+  x0_vb    = getOptiond(argc,argv,"x0_vb"  ,  1, 858.106595717275);
+  y0_vb    = getOptiond(argc,argv,"y0_vb"  ,  1, 3217.04987721548);
+  z0_vb    = getOptiond(argc,argv,"z0_vb"  ,  1, 950.690583433628);
+  C1_vb    = getOptiond(argc,argv,"C1_vb"  ,  1, 4.25236641149869);
+  C2_vb    = getOptiond(argc,argv,"C2_vb"  ,  1, 1.02531652066343);
+  C3_vb    = getOptiond(argc,argv,"C3_vb"  ,  1, 1);
+  sigx_vb  = getOptiond(argc,argv,"sigx_vb",  1, 151.854794853683);
+  sigy_vb  = getOptiond(argc,argv,"sigy_vb",  1, 78.0278905748233);
+  sigz_vb  = getOptiond(argc,argv,"sigz_vb",  1, 81.9641955092164);
+  sigx_vb0 = getOptiond(argc,argv,"sigx_vb0",  1,  63.9939241108675);
+  sigy_vb0 = getOptiond(argc,argv,"sigy_vb0",  1,  75.8180486866697);
+  sigz_vb0 = getOptiond(argc,argv,"sigz_vb0",  1,  71.2336430487113);
+  vx_str   = getOptiond(argc,argv,"vx_str" ,  1,    43.0364707040617);
+  y0_str   = getOptiond(argc,argv,"y0_str" ,  1,    406.558313420815);
+  model_vbz = getOptiond(argc,argv,"model_vbz",  1,    5); // 
+  x0_vbz    = getOptiond(argc,argv,"x0_vbz"  ,  1, 558.430182718529);
+  y0_vbz    = getOptiond(argc,argv,"y0_vbz"  ,  1, 2003.21703656302);
+  z0_vbz    = getOptiond(argc,argv,"z0_vbz"  ,  1, 3823.20855045157);
+  C1_vbz    = getOptiond(argc,argv,"C1_vbz"  ,  1, 3.71001266000693);
+  C2_vbz    = getOptiond(argc,argv,"C2_vbz"  ,  1, 1.07455173734341);
+  C3_vbz    = getOptiond(argc,argv,"C3_vbz"  ,  1, 1);
+
+  // for disk kinematic (default: all-z + flat z_d^{thin} model in Koshimoto+21)
+  hsigUt    = getOptiond(argc,argv,"hsigUt"  ,  1,  14300);// scale len of velo disp R (sigU) for thin
+  hsigWt    = getOptiond(argc,argv,"hsigWt"  ,  1,   5900);// scale len of velo disp Z (sigW) for thin
+  hsigUT    = getOptiond(argc,argv,"hsigUT"  ,  1, 180000);// scale len of velo disp R (sigU) for thick
+  hsigWT    = getOptiond(argc,argv,"hsigWT"  ,  1, 9400);  // scale len of velo disp Z (sigW) for thick
+  betaU     = getOptiond(argc,argv,"betaU"   ,  1, 0.32);  //  slope of age-sigU for thin
+  betaW     = getOptiond(argc,argv,"betaW"   ,  1, 0.77);  //  slope of age-sigW for thin
+  sigU10d   = getOptiond(argc,argv,"sigU10d" ,  1, 42.0);  // sigU for 10Gyr thin @Sunposi 
+  sigW10d   = getOptiond(argc,argv,"sigW10d" ,  1, 24.4);  // sigW for 10Gyr thin @Sunposi
+  sigU0td   = getOptiond(argc,argv,"sigU0td" ,  1, 75.0);  // sigU for thick @Sunposi
+  sigW0td   = getOptiond(argc,argv,"sigW0td" ,  1, 49.2);  // sigW for thick @Sunposi
+
+  // Use one of named models in Koshimoto+21
+  int E_fg0 = getOptiond(argc,argv,"E_fg0", 1, 0);
+  int G_fg0 = getOptiond(argc,argv,"G_fg0", 1, 0);
+  int EXE_fg0 = getOptiond(argc,argv,"EXE_fg0", 1, 0);
+  int GXG_fg0 = getOptiond(argc,argv,"GXG_fg0", 1, 0);
+  if (E_fg0 == 1){ // E model
+    model = 5, addX = 0;
+    M0_B = 1.0, M1_B = 0.843651488650385, M2_B = 0.08, M3_B = 0.01;
+    alpha1_B = -2.30708461042964, alpha2_B = -1.09811414023325, alpha3_B = -0.176687444667866;
+    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
+    R0= 8160, thetaD = 27, 
+    frho0b = 0.847695765083198, Rc = 2804.94024639663;
+    x0_1 = 668.323640191308, y0_1 = 277.674592258175, z0_1 = 235.344943180979, 
+    C1 = 1.40903573470129, C2 = 3.3497118832179, C3 = 1;
+    model_vb = 5, model_vbz = 5;
+    Omega_p = 49.5149910609312, vx_str = 48.7482280102778, y0_str = 392.515724264323,
+    sigx_vb  = 156.055410564041, sigy_vb  = 83.8197043324931, sigz_vb  = 86.3564038759999,
+    sigx_vb0 = 63.8292191277825, sigy_vb0 = 74.9469462226124, sigz_vb0 = 72.3085487545662,
+    x0_vb  = 823.387929122523, y0_vb  = 9288.51482678556, z0_vb  = 864.479916419292,
+    C1_vb  = 3.82820123451928, C2_vb  = 1.00573720627546,
+    x0_vbz = 511.063328964278, y0_vbz = 2896.01606378595, z0_vbz = 2189.7664883434,
+    C1_vbz = 3.04214421342047, C2_vbz = 1.00609904766722;
+  }
+  if (G_fg0 == 1){ // G model
+    model = 6, addX = 0;
+    M0_B = 1.0, M1_B = 0.896557393600988, M2_B = 0.08, M3_B = 0.01;
+    alpha1_B = -2.39628188518525, alpha2_B = -1.18451896148506, alpha3_B = 0.168672130848533;
+    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
+    R0= 8160, thetaD = 27, 
+    frho0b = 0.777347874844233, Rc = 4838.85613149588;
+    x0_1 = 1025.42128394916, y0_1 = 457.419718281149, z0_1 = 396.048253079423, 
+    C1 = 2.00928445577057, C2 = 3.9678518191928, C3 = 1;
+    model_vb = 5, model_vbz = 5;
+    Omega_p = 40.5174879673548, vx_str = 11.9026090372449, y0_str = 20.1384817812277,
+    sigx_vb  = 136.435675357212, sigy_vb  = 109.313291840218, sigz_vb  = 101.291432907346,
+    sigx_vb0 = 76.0453005937702, sigy_vb0 = 67.9783132842431, sigz_vb0 = 74.7117386554542,
+    x0_vb  = 1031.18302251324, y0_vb  = 2145.45565210108, z0_vb  = 727.233943973984,
+    C1_vb  = 4.9302429910108, C2_vb  = 1.04038121792228,
+    x0_vbz = 517.854475368706, y0_vbz = 1436.21008855387, z0_vbz = 1095.79181359292,
+    C1_vbz = 2.3091601785779, C2_vbz = 1.03832670354301;
+  }
+  if (EXE_fg0 == 1){ // E+E_X model
+    model = 5, addX = 5;
+    M0_B = 1.0, M1_B = 0.859770466578045, M2_B = 0.08, M3_B = 0.01;
+    alpha1_B = -2.32279457078378, alpha2_B = -1.13449983242887, alpha3_B = -0.175862190587576;
+    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
+    R0= 8160, thetaD = 27, 
+    frho0b = 0.839014514507754, Rc = 2631.78535429573;
+    x0_1 = 930.623146993329, y0_1 = 370.784386649364, z0_1 = 239.547516030578, 
+    C1 = 1.20011972384328, C2 = 4.09326795684828, C3 = 1;
+    model_vb = 5, model_vbz = 5;
+    Omega_p = 47.4105844018699, vx_str = 43.0364707040617, y0_str = 406.558313420815,
+    sigx_vb  = 151.854794853683, sigy_vb  = 78.0278905748233, sigz_vb  = 81.9641955092164,
+    sigx_vb0 = 63.9939241108675, sigy_vb0 = 75.8180486866697, sigz_vb0 = 71.2336430487113,
+    x0_vb  = 858.106595717275, y0_vb  = 3217.04987721548, z0_vb  = 950.690583433628,
+    C1_vb  = 4.25236641149869, C2_vb  = 1.02531652066343,
+    x0_vbz = 558.430182718529, y0_vbz = 2003.21703656302, z0_vbz = 3823.20855045157,
+    C1_vbz = 3.71001266000693, C2_vbz = 1.07455173734341;
+    x0_X = 278.027059842233, y0_X = 176.318528789193, z0_X = 286.791941602401,
+    C1_X = 1.3087131258784, C2_X = 2.21745322869032, 
+    b_zX = 1.37774815817195, fX = 1.43975636704683, Rc_X = 1301.63829617294;
+  }
+  if (GXG_fg0 == 1){ // G+G_X model
+    model = 6, addX = 6;
+    M0_B = 1.0, M1_B = 0.901747918318042, M2_B = 0.08, M3_B = 0.01;
+    alpha1_B = -2.32055781291126, alpha2_B = -1.16146692073597, alpha3_B = -0.222751835826612;
+    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
+    R0= 8160, thetaD = 27, 
+    frho0b = 0.861982105059042, Rc = 2834.43172768484;
+    x0_1 = 1564.78976595399, y0_1 = 721.729645984158, z0_1 = 494.669973292979, 
+    C1 = 1.20141097225, C2 = 3.09254667088709, C3 = 1;
+    model_vb = 5, model_vbz = 5;
+    Omega_p = 45.9061365175252, vx_str = 28.250608437116, y0_str = 11.4387290790323,
+    sigx_vb  = 154.984185643613, sigy_vb  = 78.4783157632334, sigz_vb  = 83.2424209150283,
+    sigx_vb0 = 63.3834790223473, sigy_vb0 = 75.1951371572303, sigz_vb0 = 69.6076680158332,
+    x0_vb  = 939.470002303028, y0_vb  = 4228.61947632437, z0_vb  = 883.716365308057,
+    C1_vb  = 4.59067123072475, C2_vb  = 1.00961963171066,
+    x0_vbz = 699.073733500672, y0_vbz = 1729.91970395558, z0_vbz = 2028.24030134845,
+    C1_vbz = 4.84589813971794, C2_vbz = 1.01718557457505;
+    x0_X = 755.975821023038, y0_X = 312.17136920671, z0_X = 399.287597819655,
+    C1_X = 1.21131134854495, C2_X = 1.30388556329566,
+    b_zX = 1.37711800325276, fX = 2.99985800759016, Rc_X = 5174.00544959931;
+  }
+
+  costheta = cos(thetaD/180.0*PI) , sintheta = sin(thetaD/180.0*PI);
+
+  // To put Sgr A* on the GC
+  int CenSgrA = getOptioni(argc,argv, "CenSgrA", 1, 1);
+  double lSgrA = -0.056;
+  double bSgrA = -0.046;
+  if (CenSgrA == 1){
+    Dlb2xyz(R0, lSgrA, bSgrA, R0, xyzSgrA);
+    // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyzSgrA[0], xyzSgrA[1], xyzSgrA[2]);
+    // double xyz[3] = {};
+    // Dlb2xyz(R0, lSgrA, bSgrA, R0, xyz);
+    // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyz[0], xyz[1], xyz[2]);
+  }
+
+  // Store Mass Function and calculate normalization factors for density distributions
+  void store_IMF_nBs(int B, double *logMass, double *PlogM, double *PlogM_cum_norm, int *imptiles, double M0, double M1, double M2, double M3, double Ml, double Mu, double alpha1, double alpha2, double alpha3, double alpha4, double alpha0);
+  nm = 1000;
+  double *logMass_B, *PlogM_cum_norm_B, *PlogM_B;
+  int *imptiles_B;
+  logMass_B        = (double*)calloc(nm+1, sizeof(double *));
+  PlogM_B          = (double*)calloc(nm+1, sizeof(double *));
+  PlogM_cum_norm_B = (double*)calloc(nm+1, sizeof(double *));
+  imptiles_B       = (int*)calloc(22, sizeof(int *));
+  store_IMF_nBs(1, logMass_B, PlogM_B, PlogM_cum_norm_B, imptiles_B, M0_B, M1_B, M2_B, M3_B, Ml, Mu, alpha1_B, alpha2_B, alpha3_B, alpha4_B, alpha0_B);
+
+  // Read mass-luminosity relation and make LF for each component
+  double Isst   = getOptiond(argc,argv,"Magrange", 1, 0.0); // 
+  double Isen   = getOptiond(argc,argv,"Magrange", 2, 0.0); // 
+  int    ROMAN  = getOptiond(argc,argv,"ROMAN", 1, 0); // 
+  int    HWBAND = getOptiond(argc,argv,"HWBAND", 1, 0); // 
+  int    iMag0 = (ROMAN == 1) ? 4 : 3;
+  nband = (ROMAN == 1) ? 6 : 5; // (J, H, K, Z087, W146, F213) for Roman, (V, I, J, H, K) otherwise.
+  int iMag  = getOptiond(argc,argv,"iMag",  1, iMag0); // ROMAN 0: (0, 1, 2, 3, 4)= (V, I, J, H, K), default: H 
+                                                       //       1: (0, 1, 2, 3, 4, 5)= (J, H, K, Z087, W146, F213), default: W146 
+  if (iMag < 0 || iMag > nband) iMag = iMag0; 
+  double **Minis, **MPDs, **Rstars, *Minvs, ***Mags;
+  char **MAG, **MLfiles;
+  double lameff[6] = {};
+  int  nMLrel[10] = {490, 646, 790, 501, 373, 325, 291, 220, 301, 330}; // ncomp, data number of MLrelation file, later updated in get_ML_LF
+  Minis  = malloc(sizeof(double *) * ncomp);  // initial mass
+  MPDs   = malloc(sizeof(double *) * ncomp);  // current (present-day) mass
+  Rstars = malloc(sizeof(double *) * ncomp); // Stellar radius
+  Minvs  = calloc(ncomp, sizeof(double *)); // minimum initial mass after which mag gets fainter
+  MLfiles = malloc(sizeof(char *) * ncomp); // Path of MLfile for each comp
+  for (int i=0; i<ncomp; i++){
+    Minis[i] = calloc(nMLrel[i], sizeof(double *));
+    MPDs[i] = calloc(nMLrel[i], sizeof(double *));
+    Rstars[i]  = calloc(nMLrel[i], sizeof(double *));
+    MLfiles[i] = malloc(sizeof(char) * 61); // 60 is max number of characters of path for MLfile
+  }
+  MAG    = malloc(sizeof(char *) * nband); // Name of each band
+  Mags   = malloc(sizeof(double *) * nband);  // absolute mag, J, H, Ks, Z087, W146, F213
+  for (int j=0; j<nband; j++){
+    MAG[j]  = malloc(sizeof(char) * 8); // 7 is max characters of path for MLfile
+    Mags[j] = malloc(sizeof(double *) * ncomp);
+    for (int i=0; i<ncomp; i++){
+      Mags[j][i] = calloc(nMLrel[i], sizeof(double *));
+    }
+  }
+  void get_MAG_MLfiles(int ROMAN, char **MAG, char **MLfiles, double *lameff);
+  get_MAG_MLfiles(ROMAN, MAG, MLfiles, lameff);
+  int get_ML_LF(int calcLF, int ROMAN, char **MLfiles, int iMag, int *nMLrel, double **Minis, double **MPDs, double ***Mags, double **Rstars, double *Minvs, int Magst, int Magen, double dMag, double **CumuLFs, double *logMass, double *PlogM_cum_norm, double *PlogM); 
+  int Magst = -10;
+  int Magen =  Isen - 5;
+  if (Magen >  40) Magen =  40;
+  double dMag = 0.02;
+  int nLF = (Magen - Magst)/dMag + 1;
+  CumuN_MIs = malloc(sizeof(double *) * ncomp);
+  for (int i=0; i<ncomp; i++){
+     CumuN_MIs[i] = calloc(nLF, sizeof(double *));
+  }
+  int calcLF = (Isen - Isst > 0) ? 1 : 0;
+  nMIs = get_ML_LF(calcLF, ROMAN, MLfiles, iMag, nMLrel, Minis, MPDs, Mags, Rstars, Minvs, Magst, Magen, dMag, CumuN_MIs, logMass_B, PlogM_cum_norm_B, PlogM_B);
+  // for (int icomp=0; icomp < ncomp; icomp++){
+  //   printf("icomp= %d Minv= %.10f\n",icomp,Minvs[icomp]);
+  // }
+
+
+  // Read Cumu P_Shu
+  int nfg = 100;
+  int nz = (zenShu - zstShu)/dzShu + 1;
+  int nR = (RenShu - RstShu)/dRShu + 1;
+  int ndisk = 8;
+  fgsShu      = (double****)malloc(sizeof(double *) * nz);
+  PRRgShus    = (double****)malloc(sizeof(double *) * nz);
+  cumu_PRRgs  = (double****)malloc(sizeof(double *) * nz);
+  n_fgsShu  = (int***)malloc(sizeof(int *) * nz);
+  kptiles   = (int****)malloc(sizeof(int *) * nz);
+  for (int i=0; i<nz; i++){
+    fgsShu[i]  = (double***)malloc(sizeof(double *) * nR);
+    PRRgShus[i] = (double***)malloc(sizeof(double *) * nR);
+    cumu_PRRgs[i] = (double***)malloc(sizeof(double *) * nR);
+    n_fgsShu[i]  = (int**)malloc(sizeof(int *) * nR);
+    kptiles[i]   = (int***)malloc(sizeof(int *) * nR);
+    for (int j=0; j<nR; j++){
+      fgsShu[i][j]  = (double**)malloc(sizeof(double *) * ndisk);
+      PRRgShus[i][j] = (double**)malloc(sizeof(double *) * ndisk);
+      cumu_PRRgs[i][j] = (double**)malloc(sizeof(double *) * ndisk);
+      kptiles[i][j] = (int**)malloc(sizeof(int *) * ndisk);
+      n_fgsShu[i][j]  = (int*)calloc(ndisk, sizeof(int *));
+      for (int k=0; k<ndisk; k++){
+        fgsShu[i][j][k]   = (double*)calloc(nfg, sizeof(double *));
+        PRRgShus[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+        cumu_PRRgs[i][j][k] = (double*)calloc(nfg, sizeof(double *));
+        kptiles[i][j][k]  = (int*)calloc(22, sizeof(int *));
+      }
+    }
+  }
+
+  char lineS[1000];
+  char *wordsS[105];
+  FILE *fshu;
+  char *fileShu;
+  fileShu = getOptionc(argc,argv,"ShuFile", 1, "DFShu.txt"); // 
+  if((fshu=fopen(fileShu,"r"))==NULL){
+    printf("can't open %s\n",fileShu);
+    exit(1);
+  }
+
+  // printf("Finished loading the file\n");
+
+  int i_aux = 0; int j_aux = 0; int k_aux = 0; int n_fgs_aux_max = -1;
+  while (fgets(lineS,1000,fshu) !=NULL){
+    int nwords = split((char*)",", lineS, wordsS);
+    if (*wordsS[0] == '#') continue;
+    int i = atol(wordsS[0]);
+    int j = atol(wordsS[1]);
+    int k = atol(wordsS[2]);
+    int n_fgs_aux = atol(wordsS[3]);
+    double fgs_aux =  atof(wordsS[4]);
+    double cumu_prrg_aux = atof(wordsS[5]);
+    double prrg_aux = atof(wordsS[6]);
+
+    // printf("%i,%i,%i,%i,%f,%f,%f\n",i,j,k,n_fgs_aux,fgs_aux,cumu_prrg_aux,prrg_aux);
+
+    if (n_fgs_aux>n_fgs_aux_max){
+      n_fgs_aux_max = n_fgs_aux;
+    }
+    else{
+      // we moved to a new iz, iR, idisk
+      n_fgsShu[i_aux][j_aux][k_aux] = n_fgs_aux_max + 1; //the last number (n_fgs_aux_max) is the n_fgsShu
+      for (int ktmp=0; ktmp<(n_fgs_aux_max + 1);ktmp++){
+        int intp = cumu_PRRgs[i_aux][j_aux][k_aux][ktmp]*20;
+        if (kptiles[i_aux][j_aux][k_aux][intp]==0) kptiles[i_aux][j_aux][k_aux][intp] = (intp==0) ? 1 : ktmp+0.5;
+      }
+      n_fgs_aux_max = n_fgs_aux;
+      i_aux = i;
+      j_aux = j;
+      k_aux = k;
+    }
+
+    fgsShu[i][j][k][n_fgs_aux] = fgs_aux;
+    cumu_PRRgs[i][j][k][n_fgs_aux] = cumu_prrg_aux;
+    PRRgShus[i][j][k][n_fgs_aux] = prrg_aux;
+  }
+  fclose(fshu);
+
+
+  // printf("%.4f",cumu_PRRgs[0][0][0][0]);
+
+  // set y0d for disk normalize
+  y0d[0] = (DISK == 1) ? exp(-R0/Rd[0] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[0]);
+  y0d[1] = (DISK == 1) ? exp(-R0/Rd[1] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[1]);
+  y0d[2] = (DISK == 1) ? exp(-R0/Rd[2] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[2]);
+
+  // Print input parameters as header 
+  printf("#   Output of \"./genstars ");
+  for (int i=1;i<argc;i++) {
+    printf("%s", argv[i]);
+    if (i < argc - 1) {
+      printf(" ");
+    }
+  }
+  printf("\"\n");
+  printf("#---------- Parameters for IMF and Sun ----------\n");
+  printf("#      IMF:  alpha0= %5.2f ( %.2f <M< %.2f ),\n",alpha0_B,M0_B,Mu);
+  printf("#            alpha1= %5.2f ( %.2f <M< %.2f ),\n",alpha1_B,M1_B,M0_B); 
+  printf("#            alpha2= %5.2f ( %.2f <M< %.2f ),\n",alpha2_B,M2_B,M1_B); 
+  printf("#            alpha3= %5.2f ( %.2f <M< %.2f ),\n",alpha3_B,M3_B,M2_B); 
+  printf("#            alpha4= %5.2f ( %.5f <M< %.5f )\n",alpha4_B,Ml,M3_B);
+  printf("#         (R, z)sun= (%5.0f, %5.0f) pc\n",R0,zsun);
+  printf("#   (vx, vy, vz)sun= (%5.1f, %5.1f, %4.1f) km/s\n",vxsun,vysun,vzsun);
+  printf("#------------ Disk model: (DISK, hDISK, tSFR)= ( %d , %d , %.1f Gyr ) --------------\n",DISK, hDISK,tSFR);
+  printf("#            tau   Rd  zd zd45 sigU0 sigW0  RsigU  RsigW    rho0        n0     n0WD \n");
+  printf("#            Gyr   pc  pc   pc  km/s  km/s     pc     pc  Msun/pc^3  */pc^3   */pc^3\n");
+  double MVVVd = 0;  // mass in the VVV box when DISK == 2
+  double Mind = 0;  // mass of inner disk (< Rbreak) when DISK == 2
+  for (int i = 0; i< ndisk; i++){
+    int rd = (i == 0) ? Rd[0] : (i < 7) ? Rd[1] : (i == 7) ? Rd[2] : 0;
+    int zdtmp = (hDISK == 0) ? zd[i] : zd45[i];
+    double MVVVtmp = 0;
+    // if (DISK == 2){ // same normalization also when DISK != 2
+      MVVVtmp = rho0d[i] * exp((R0 - Rdbreak)/rd) * 2200*2 * 1400*2 * zd[i] / zdtmp;
+      double ztmp    = 1200.0/zdtmp;  // z of VVV box
+      Mind    += 2 * zdtmp * MVVVtmp / 4400 / 2800 * PI * Rdbreak * Rdbreak;
+      MVVVtmp *= (i < 7) ? 2 * zdtmp * (exp(2*ztmp) - 1)/(exp(2*ztmp) + 1)  
+                         : 2 * zdtmp * (1 - exp(-ztmp));
+      MVVVd   += MVVVtmp;
+    // }
+    double hsigU = (i < 7) ? hsigUt : hsigUT;
+    double hsigW = (i < 7) ? hsigWt : hsigWT;
+    double sigW0 = (i < 7) ? sigW10d * pow((medtauds[i]+0.01)/10.01, betaW) : sigW0td;
+    double sigU0 = (i < 7) ? sigU10d * pow((medtauds[i]+0.01)/10.01, betaU) : sigU0td;
+    printf ("#   Disk%d: %5.2f %4d %3.0f  %3d %5.2f %5.2f %6.0f %6.0f   %.2e %.2e %.2e\n",i+1,medtauds[i], rd, zd[i],zdtmp,sigU0,sigW0,hsigU,hsigW,rho0d[i],n0d[i],n0d[i]-n0MSd[i]);
+  }
+
+  // Crude normalize bulge mass
+  double crude_integrate(double xmax, double ymax, double zmax, int nbun);
+  double massVVVbox = crude_integrate(2200, 1400, 1200, 15); // VVV box defined by Wegg & Gerhard (2013), MNRAS, 435, 1874
+  double massentire = crude_integrate(6000, 3000, 3000, 30); // should include entire bulge
+  double fm1 = 1, fmX = 0;
+  if (addX >= 5){
+    int addXtmp = addX;
+    addX = 0;
+    double mass1all = crude_integrate(6000, 3000, 3000, 30);
+    addX = addXtmp;
+    fm1 = mass1all / massentire;
+    fmX = 1 - fm1;
+  }  
+  double MVVVP17 = 1.32e+10;
+  rho0b = (frho0b * MVVVP17 - MVVVd)/massVVVbox; // normalized by mass in the VVV box by Portail et al. (2017), MNRAS, 465, 1621
+  n0MSb = rho0b * fb_MS * m2nb_MS; // number density of bar MS stars
+  n0RGb = n0MSb * nMS2nRGb; // number density of bar RG stars (for mu calculation)
+  n0b   = n0MSb + rho0b * (1 - fb_MS) * m2nb_WD; // number density of b MS+WD stars
+  massVVVbox *= rho0b;
+  massentire *= rho0b;
+
+  printf("#------------------ Bulge model: (alpha_bar, Mbar, Mind, MVVVb, MVVVd) = ( %.1f deg, %.2e Msun, %.2e Msun, %.2e Msun, %.2e Msun) ---------------------\n",thetaD,massentire,Mind,massVVVbox,MVVVd);
+  printf("#   (M_MS, M_REM)ave= (%.6f %.6f) Msun/*, fM_REM= %.4f, Mass/RG= %5.1f Msun/RG \n",1/m2nb_MS,1/m2nb_WD,1-fb_MS,1/fb_MS/m2nb_MS/nMS2nRGb);
+  printf("#   rho%d: M= %.2e Msun, rho0b= %5.2f Msun/pc^3, (x0, y0, z0, Rc)= (%4.0f, %4.0f, %3.0f, %4.0f) pc, (C1, C2,   C3)= (%.1f, %.1f, %.1f)\n",model,fm1*massentire,rho0b,x0_1,y0_1,z0_1,Rc,C1,C2,C3);
+  if (addX >= 5) printf("#     X%d: M= %.2e Msun, rho0X= %5.2f Msun/pc^3, (x0, y0, z0, Rc)= (%4.0f, %4.0f, %3.0f, %4.0f) pc, (C1, C2, b_zX)= (%.1f, %.1f, %.1f)\n",addX,fmX*massentire,rho0b*fX,x0_X,y0_X,z0_X,Rc_X,C1_X,C2_X,b_zX);
+  printf("#   (Omega_p, vx_str)= ( %.1f km/s/kpc, %3.0f[1 - e^{-(|yb|/%4.0f)^2}] km/s ),",Omega_p,vx_str,y0_str);
+  printf(" sig0+1(xb, yb, zb)= (%3.0f+%3.0f, %3.0f+%3.0f, %3.0f+%3.0f) km/s\n",sigx_vb,sigx_vb0,sigy_vb,sigy_vb0,sigz_vb,sigz_vb0);
+  printf("#   sigR%d: (x0, y0, z0)= (%5.0f, %5.0f, %5.0f) pc, (C1, C2, C3)= (%.1f, %.1f, %.1f)\n",model_vb,x0_vb,y0_vb,z0_vb,C1_vb,C2_vb,C3_vb);
+  printf("#   sigZ%d: (x0, y0, z0)= (%5.0f, %5.0f, %5.0f) pc, (C1, C2, C3)= (%.1f, %.1f, %.1f)\n",model_vbz,x0_vbz,y0_vbz,z0_vbz,C1_vbz,C2_vbz,C3_vbz);
+
+  // normalize ND mass before go into loop
+  double MND;
+  int NSD = getOptiond(argc,argv,"NSD",   1,   3); // 0: wo nuclear disk, 1: w/ nuclear disk by P17, 2: w/ Sormani+21-like NSD
+                                                   // 3: w/ more Sormani+21-like NSD (use input_files/NSD_moments.dat)
+  if (NSD == 1){ // Consider Portail+17's NSD
+    MND  = 2.0e+09;
+    x0ND = 250;
+    y0ND = 125;
+    z0ND =  50;
+  }
+  if (NSD == 2){ // Consider Sormani+21-like NSD
+    MND  = 7.0e+08;
+    x0ND =  74;
+    y0ND =  74;
+    z0ND =  26;
+  }
+  x0ND  = getOptiond(argc,argv,"x0ND",  1, x0ND); 
+  y0ND  = getOptiond(argc,argv,"y0ND",  1, y0ND); 
+  z0ND  = getOptiond(argc,argv,"z0ND",  1, z0ND); 
+  MND   = getOptiond(argc,argv,"MND" ,  1,  MND); 
+  if (NSD > 0){
+    rho0ND = (NSD == 3) ? 1 : 0.25*MND/PI/x0ND/y0ND/z0ND; // Msun/pc^3 is given by calc_rho_each when ND == 3
+    n0MSND = rho0ND * fND_MS * m2nND_MS; // number density of ND MS stars
+    n0RGND = n0MSND * nMS2nRGND; // number density of ND RG stars (for mu calculation)
+    n0ND   = n0MSND + rho0ND * (1 - fND_MS) * m2nND_WD; // number density of ND MS+WD stars
+  }
+  nzND = (zenND - zstND)/dzND + 1.5;
+  nRND = (RenND - RstND)/dRND + 1.5;
+  if (NSD == 3){ // More Sormani+21-like NSD, Use input_files/NSD_moments.dat 
+    logrhoNDs   = (double**)malloc(sizeof(double *) * nzND);
+    vphiNDs     = (double**)malloc(sizeof(double *) * nzND);
+    corRzNDs    = (double**)malloc(sizeof(double *) * nzND);
+    logsigvNDs  = (double***)malloc(sizeof(double *) * nzND);
+    for (int i=0; i<nzND; i++){
+      logrhoNDs[i] = (double*)calloc(nRND, sizeof(double *));
+      vphiNDs[i]   = (double*)calloc(nRND, sizeof(double *));
+      corRzNDs[i]  = (double*)calloc(nRND, sizeof(double *));
+      logsigvNDs[i] = (double**)malloc(sizeof(double *) * nRND);
+      for (int j=0; j<nRND; j++){
+        logsigvNDs[i][j] = (double*)calloc(3, sizeof(double *)); // 3= phi, R, z
+      }
+    }
+    char *fileND = (char*)"input_files/NSD_moments.dat";
+    void store_NSDmoments(char *infile);
+    store_NSDmoments(fileND);
+  }
+
+  // normalize NSC mass before go into loop
+  NSC = getOptiond(argc,argv,"NSC",   1,   0); // 0: wo nuclear star cluster, 1: w/ nuclear star cluster
+  double MNSC = getOptiond(argc,argv,"MNSC" ,  1, 6.1e+07); // Chatzopoulos+15
+  if (NSC > 0){
+    // use same conversion factors as NSD's
+    rho0NSC = (3-gammaNSC)*0.25*MNSC/PI/qNSC; // Msun, not Msun/pc^3
+    n0MSNSC = rho0NSC * fND_MS * m2nND_MS; // number density of NSC MS stars
+    n0RGNSC = n0MSNSC * nMS2nRGND; // number density of NSC RG stars (for mu calculation)
+    n0NSC   = n0MSNSC + rho0NSC * (1 - fND_MS) * m2nND_WD; // number density of NSC MS+WD stars
+    // printf ("NSC: rho= %",);
+  }
+
+  // Read input parameters for loop
+  int    Dmax    = getOptiond(argc,argv,"Dmax", 1, 16000);
+  double fSIMU    = getOptiond(argc,argv,"fSIMU",  1, 0.01); // Default NSIMU = fSIMU x [star count]
+  int VERBOSITY   = getOptiond(argc,argv,"VERBOSITY",  1, 0);
+  int BINARY      = getOptiond(argc,argv,"BINARY",   1,  0);
+  int EXTLAW      = getOptiond(argc,argv,"EXTLAW",   1,  1);
+  int EXTMAP      = getOptiond(argc,argv,"EXTMAP",   1,  1); // Default set to be 1 for public version.
+  if (EXTMAP == 0)
+    EXTMAP = 1;  // EXTMAP == 0 is unavailable in the public version because the extinction map is too heavy to be controlled under git
+  // long   NSIMU    = getOptionl(argc,argv,"NSIMU",  1, 0); // Default: NSIMU = fSIMU x [star count]
+  long   NSIMU    = 0; // Default: NSIMU = fSIMU x [star count]
+  double lst   = getOptiond(argc,argv,"l",  1,  1.875);
+  double len   = getOptiond(argc,argv,"l",  2,  2.125);
+  double bst   = getOptiond(argc,argv,"b",  1, -1.625);
+  double ben   = getOptiond(argc,argv,"b",  2, -1.375);
+  if (lst >= len || bst >= ben){
+    printf ("lst (bst) has to be < len (ben)!\n");
+    exit(1);
+  }
+  if (lst < -9.5 || len > 9.5 || bst < -10.0 || ben > 4.5){
+    printf ("The Gonzalez+12 extinction map covers -9.5 < l < 9.5 and -10 < b < 4.5, and does not cover the (part of) input area!\n");
+    exit(1);
+  }
+  printf("#-------------- Input parameters ---------------\n");
+  printf("#    CenSgrA= %d     (0: GC at (l,b)=(0,0), 1: GC at (l,b)= (%.3f, %.3f))\n", CenSgrA, lSgrA, bSgrA);
+  // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyzSgrA[0], xyzSgrA[1], xyzSgrA[2]);
+  printf("#      ROMAN= %d     (0: use VIJHKs and hybrid mass-lumi rel., 1: use JHKsZ086W146F213 and isochrone mass-lumi rel.\n", ROMAN);
+  if (ROMAN == 1)
+    printf("#       iMag= %d     (0: J, 1: H, 2: Ks, 3: Z086, 4: W146, 5: F213)\n", iMag);
+  else
+    printf("#       iMag= %d     (0: V, 1: I, 2: J, 3: H, 4: Ks)\n", iMag);
+  printf("#        NSC= %d     (0: no NSC, 1: Chatzopoulos+15's NSC)\n", NSC);
+  printf("#        NSD= %d     (0: no NSD, 1: Portail+17's NSD, 2: Sormani+22-like NSD, 3: Use Sormani+22's DF's moments)\n", NSD);
+  printf("#     EXTLAW= %d     (0: Alonso-Garcia+17's ext. law , 1: Nishiyama+09's ext. law , 2: Wang&Chen19's law)\n", EXTLAW);
+  printf("#     EXTMAP= %d     (0: 0.0025x0.0025 deg^2 (slowest, unavailable in the public ver.), 1: 0.005x0.005 deg^2, 2: 0.025x0.025 deg^2 (fastest))\n", EXTMAP);
+  printf("#     BINARY= %d     (0: no binary , 1: with binary )\n", BINARY);
+  printf("#  VERBOSITY= %d     (0: no output , 1: output , 2: more output, 3: 2+each extinction)\n", VERBOSITY);
+  printf("#       seed= %ld    (random seed value )\n", seed0);
+  if (NSIMU == 0) printf("#      fSIMU= %.4f  (NSIMU propto AREA*fSIMU )\n", fSIMU);
+
+  // Read Gonzalez+12 extintion map and generate stars each grid inside the input area
+  char line[1000];
+  char *words[105];
+  FILE *fp;
+  char *fileEJK;
+  fileEJK = (EXTMAP == 0) ? "input_files/EJK_G12_S20.dat"    // High resolution (0.0025 x 0.0025 deg^2)
+                          : "input_files/EJK_G12_S20_LR.dat"; // Low resolution (0.005 x 0.005 deg^2 or 0.025 x 0.025 deg^2)
+  if((fp=fopen(fileEJK,"r"))==NULL){
+    printf("can't open %s\n",fileEJK);
+    exit(1);
+  }
+  double dlEJK = 0.025, dbEJK = 0.025; // have to same as the bin width of $fileEJK
+  double dlhalf = 0.5*dlEJK, dbhalf= 0.5*dbEJK;
+  lDs        = (double *)malloc(sizeof(double *) * 1);
+  bDs        = (double *)malloc(sizeof(double *) * 1);
+  double elongation(double azi1, double alt1, double azi2, double alt2);
+  printf("#---- Read extinction map and generate stars each grid ( %.3f x %.3f ) inside %.3f < l < %.3f , %.3f < b < %.3f ----\n",dlEJK,dbEJK,lst,len,bst,ben);
+  int igrids = 0;
+  double allmass = 0, allstars = 0;
+  double ncntall = 0, ncnts = 0, ncntbWD = 0, ncntbCD = 0;
+  double ncntcomp[12] = {}; // should be > ncomp. Prepare 12 just in case
+  double nBD = 0, nMS = 0, nWD = 0, nNS= 0, nBH =  0;
+  int nerror = 0;
+  while (fgets(line,1000,fp) !=NULL){
+    int nwords = split((char*)" ", line, words);
+    if (*words[0] == '#') continue;
+    double lSIMU = atof(words[0]);
+    double bSIMU = atof(words[1]);
+    double ERR  = 1e-10;
+    double l1 = (lSIMU - dlhalf);
+    double l2 = (lSIMU + dlhalf);
+    double b1 = (bSIMU - dbhalf);
+    double b2 = (bSIMU + dbhalf);
+    if (l2 - ERR  <= lst || l1 + ERR >= len || b2 - ERR <= bst || b1 + ERR >= ben) continue;
+    // printf("%.20f %.20f %.12f %.12f %.12f %.12f %.12f %.12f\n",l2,lst,l1,len,b2,bst,b1,ben);
+    // printf("%.4f %.4f %.4f %.4f\n",lSIMU,bSIMU,EJK,EJK*EJK2AH);
+    // Calc area of each grid
+    double ll = (l1 < lst) ? lst  //  far left  grid
+              : l1;
+    double lr = (l2 > len) ? len  //  far right grid
+              : l2;
+    double bb = (b1 < bst) ? bst  //  bottom  grid
+              : b1;
+    double bt = (b2 > ben) ? ben  //  top     grid
+              : b2;
+    double lcen = 0.5 * (ll + lr);
+    double bcen = 0.5 * (bb + bt);
+    // printf ("%f %f %f %f\n",ll, lr, bb, bt);
+    double dl = elongation(ll,   bcen, lr, bcen);
+    double db = elongation(lcen, bb, lcen, bt);
+    double AREA = dl * db * 3600; // deg^2 -> arcmin^2
+
+    // Store EJKs within ll < l < lr, bb < b < bt
+    // Some grids are further divided into 100 (EXTMAP==0) or 25 (EXTMAP==1) subgrids by Surot+20
+    double EJKs[101] = {}, areaEJKs[101] = {}, sumareaEJK = 0;
+    double lcens[101] = {}, bcens[101] = {}, dls[101] = {}, dbs[101] = {};
+    int nEJK = 0;
+    double dlEJKsub = (EXTMAP == 0) ? 0.0025 : 0.005;
+    double dbEJKsub = (EXTMAP == 0) ? 0.0025 : 0.005;
+    int nlsub = dlEJK / dlEJKsub + 0.5;
+    int nbsub = dbEJK / dbEJKsub + 0.5;
+    double EJKmax = -99, EJKmin = 99;
+    for (int ijk=2; ijk < nwords; ijk++){
+      if (ijk > 2 && EXTMAP == 2) break; // Just use ejk_mean when EXTMAP == 2
+      if (nwords > 4 && EXTMAP < 2){
+        if (ijk == 2) continue; // Skip mean E(J-Ks)
+        int il = (ijk - 3) / nlsub;
+        int ib = (ijk - 3) % nbsub;
+        double l1sub = l1 + il * dlEJKsub;
+        double l2sub = l1sub   + dlEJKsub;
+        double b1sub = b1 + ib * dbEJKsub;
+        double b2sub = b1sub   + dbEJKsub;
+        if (l2sub - ERR <= ll || l1sub + ERR >= lr || b2sub - ERR <= bb || b1sub + ERR >= bt) continue;
+        double llsub = (l1sub < ll) ? ll  //  far left  grid
+                     : l1sub;
+        double lrsub = (l2sub > lr) ? lr  //  far right grid
+                     : l2sub;
+        double bbsub = (b1sub < bb) ? bb  //  bottom  grid
+                     : b1sub;
+        double btsub = (b2sub > bt) ? bt  //  top     grid
+                     : b2sub;
+        dls[nEJK] = (lrsub - llsub);
+        dbs[nEJK] = (btsub - bbsub);
+        lcens[nEJK] = 0.5 * (llsub + lrsub);
+        bcens[nEJK] = 0.5 * (bbsub + btsub);
+        // printf ("(llsub, l1sub, ll)=  (%.15f, %.15f, %.15f)\n",llsub, l1sub, ll);
+        // printf ("(lrsub, l2sub, lr)=  (%.15f, %.15f, %.15f)\n",lrsub, l2sub, lr);
+        // printf ("(bbsub, b1sub, bb)=  (%.15f, %.15f, %.15f)\n",bbsub, b1sub, bb);
+        // printf ("(btsub, b2sub, bt)=  (%.15f, %.15f, %.15f)\n",btsub, b2sub, bt);
+        // printf ("lcen= 0.5 * ( %f + %f ) = %f\n",llsub, lrsub, lcens[nEJK]);
+        // printf ("bcen= 0.5 * ( %f + %f ) = %f\n",bbsub, btsub, bcens[nEJK]);
+        // double dlsub= elongation(llsub,   bcensub, lrsub, bcensub);
+        // double dbsub= elongation(lcensub, bbsub, lcensub, btsub);
+        areaEJKs[nEJK] = (dls[nEJK]/dlEJKsub) * (dbs[nEJK]/dbEJKsub) ; // deg^2 -> arcmin^2
+        sumareaEJK += areaEJKs[nEJK];
+      }else{ // just take mean 
+        dls[nEJK] = dl;
+        dbs[nEJK] = db;
+        lcens[nEJK] = lcen;
+        bcens[nEJK] = bcen;
+        areaEJKs[nEJK] = 1;
+        sumareaEJK = 1;
+      }
+      EJKs[nEJK] = atof(words[ijk]);
+      // printf ("%8.5f %8.5f %f\n",lcens[nEJK], bcens[nEJK], EJKs[nEJK]);
+      if (EJKs[nEJK] > EJKmax) EJKmax = EJKs[nEJK];
+      if (EJKs[nEJK] < EJKmin) EJKmin = EJKs[nEJK];
+      nEJK++;
+    }
+
+    // Consider Nuclear Disk if  (y, z) reaches (125, 50) x 5 (= 625, 250) at 8 kpc
+    ND = (fabs(lSIMU) < 5 && fabs(bSIMU) < 2) ? NSD : 0;
+
+    //------- Set extinction parameters -----------
+    double DMrc = 14.3955 - 0.0239 * lSIMU + 0.0122*fabs(bSIMU)+0.128; // Eqs(2)-(3) of Nataf+16 
+    lDs[0]    = lSIMU; //
+    bDs[0]    = bSIMU; //
+    int idata = 0;
+    double cosb = cos(bDs[idata]/180.0*PI), sinb = sin(bDs[idata]/180.0*PI), 
+           cosl = cos(lDs[idata]/180.0*PI), sinl = sin(lDs[idata]/180.0*PI);
+    double hscale = 164.0/(fabs(sinb) + 0.0001);  // 164 pc = dust scale height from Nataf+13
+    double Dmean  = pow(10, 0.2*DMrc) * 10;
+    // Calc Alams. Alams refers to A_lambda/E(J-Ks) at this moment
+    //
+    void getEJK2Alams(int EXTLAW, int nlams, double *EJK2Alams, double *lameff, double l, double b);
+    double *Alams;
+    Alams = (double *)calloc(nband, sizeof(double *));
+    getEJK2Alams(EXTLAW, nband, Alams, lameff, lSIMU, bSIMU); // put A_lambda/E(J-Ks) in Alams
+    double AIrc = Alams[iMag]; // AIrc refers to A_iMag/E(J-Ks)
+    for (int j = 0; j < nband; j++){
+      // printf("Alam[%d]/E(J-Ks)= %f\n",j,Alams[j]);
+      Alams[j] /= (1 - exp(-Dmean/hscale));
+    }
+    double AI0  = Alams[iMag]; // 
+
+    //------- Store cumu_rho for each ith comp as a function of distance -----------
+    void calc_rho_each(double D, int idata, double *rhos, double *xyz, double *xyb);  // return rho for each component 
+    double xyz[3] = {}, xyb[2] = {};
+    int  nbin = (NSC > 0 && fabs(lSIMU) < 0.15 && fabs(bSIMU) < 0.10) ? 1.0*Dmax+0.5 
+              : (ND > 0 && fabs(lSIMU) < 0.05 && fabs(bSIMU) < 0.05) ? 0.20*Dmax+0.5 
+              : (ND > 0 && fabs(lSIMU) < 0.10 && fabs(bSIMU) < 0.10) ? 0.10*Dmax+0.5
+              : (ND > 0) ? 0.04*Dmax+0.5 
+              : 0.01*Dmax+0.5;
+    double dD = (double) Dmax/nbin;
+    // Lens   : include REMNANT, mass basis 
+    // Source : only stars, number basis 
+    double *D, **rhoD_S, **cumu_rho_S, *cumu_rho_all_S, *rhos, ***cumu_P_EJKs;
+    D               = (double *)calloc(nbin+1, sizeof(double *));
+    cumu_rho_all_S  = (double *)calloc(nbin+1, sizeof(double *));
+    rhos        = (double *)calloc(ncomp+1, sizeof(double *)); // +1 for NSC
+    rhoD_S      = (double **)malloc(sizeof(double *) * ncomp);
+    cumu_rho_S  = (double **)malloc(sizeof(double *) * ncomp);
+    cumu_P_EJKs = (double ***)malloc(sizeof(double *) * ncomp);
+    for (int i=0; i<ncomp; i++){
+      rhoD_S[i]     = (double *)calloc(nbin+1, sizeof(double *));
+      cumu_rho_S[i] = (double *)calloc(nbin+2, sizeof(double *));
+      cumu_P_EJKs[i] = (double **)malloc(sizeof(double *) * (nbin + 1));
+      for (int j=0; j<nbin+1; j++){
+        cumu_P_EJKs[i][j] = (double *)calloc(nEJK, sizeof(double *));
+      }
+    }
+    double fLF_detect(int nMIs, double Magst, double dMag, double extI, double Imin, double Imax, int idisk);
+    // printf("#----- Number density (min^-2) distribution along (l, b)=( %.3f , %.3f )--------\n",lSIMU,bSIMU);
+    int npri = 10;
+    double SumNSD = 0, SumNSC = 0;
+    for (int ibin=0; ibin<=nbin; ibin++){
+      D[ibin] = (double) ibin/nbin * Dmax;
+      calc_rho_each(D[ibin], idata, rhos, xyz, xyb);
+      double R = sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1]);
+      // if (ibin%npri ==0) printf ("# %5.0f %5.0f %5.0f ",D[ibin],R,xyz[2]);
+      double rhosum = 0;
+      double DM  = 5 * log10(0.1*(D[ibin] + 0.1));
+      double EJK2AI  =  AI0 * (1 - exp(-D[ibin]/hscale));
+      // if (R < 100) printf ("%.0f %.0f %.5e %.5e\n",R,xyz[2],n0MSND*rhos[9],n0MSNSC*rhos[10]);
+      SumNSD += n0MSND*rhos[9];
+      SumNSC += n0MSNSC*rhos[10];
+      // if (R < 100) printf ("%.0f %.0f %.5e %.5e\n",R,xyz[2],rho0ND*rhos[9],rho0NSC*rhos[10]);
+      for (int i=0;i<ncomp;i++){
+        double nMS = (i == 8) ? n0MSb*rhos[8] : (i == 9) ? n0MSND*rhos[9] + n0MSNSC*rhos[10] : n0MSd[i]*rhos[i];
+        double rho = (i == 8) ? n0b  *rhos[8] : (i == 9) ? n0ND  *rhos[9] + n0NSC  *rhos[10] : n0d[i]  *rhos[i];
+        if (Isen - Isst > 0){ // if Magrange is given
+          rhoD_S[i][ibin] = nMS * D[ibin] * D[ibin] * STR2MIN2;
+          double fIs = 0, sumwtEJK = 0;
+          double fac2int = -1;
+          for (int iEJK = 0; iEJK < nEJK; iEJK++){
+            double extI = EJK2AI*EJKs[iEJK] + DM;
+            double fIsEJK = areaEJKs[iEJK] * fLF_detect(nMIs, Magst, dMag, extI, Isst, Isen, i);
+            fIs += fIsEJK;
+            if (fIsEJK > 0 && fac2int == -1){
+              fac2int = 1/fIsEJK; // to avoid round error due to too small value
+            }
+            cumu_P_EJKs[i][ibin][iEJK] = fac2int*fIs;  // if (ran < cumu_P_EJKs[iEJK]) ilb = iEJK
+          }
+          rhoD_S[i][ibin] *= fIs / sumareaEJK;
+          // printf (" %.5f %.5e",fIs,rhoD_S[i][ibin]);
+        }else{ // For lens catalog
+          rhoD_S[i][ibin] = rho * D[ibin] * D[ibin] * STR2MIN2;
+          for (int iEJK = 0; iEJK < nEJK; iEJK++){
+            cumu_P_EJKs[i][ibin][iEJK] = (iEJK == 0) ? areaEJKs[iEJK]
+                                       : areaEJKs[iEJK] + cumu_P_EJKs[i][ibin][iEJK-1];
+          }
+        }
+        cumu_rho_S[i][ibin]  = (ibin==0) ? 0 : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD; // not accurate, but to let cumu_rho_S has the same number of arrays
+        // cumu_rho_S[i][ibin]  = (ibin==0) ? 0.5*rhoD_S[i][ibin]*dD : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD;
+        cumu_rho_all_S[ibin] += cumu_rho_S[i][ibin];
+        rhosum += rhoD_S[i][ibin];
+        // if (ibin%npri==0){ 
+        //   printf (" %d: %.1e ",i,rhoD_S[i][ibin]);
+        //   printf ("( %.2e )",cumu_rho_S[i][ibin]);
+        // }
+      }
+      // printf ("\n");
+      // if (ibin%npri==0){ 
+      //     printf (" All: %.1e ",rhosum);
+      //     printf ("( %.2e )\n",cumu_rho_all_S[ibin]);
+      // }
+    }
+    // printf ("# SumNSD= %.5e SumNSC= %.5e NSC/NSD= %.8f\n",SumNSD, SumNSC,SumNSC/SumNSD);
+    int **ibinptiles_S;
+    ibinptiles_S  = (int **)malloc(sizeof(int *) * ncomp);
+    for (int i=0; i<ncomp; i++){
+      ibinptiles_S[i] = (int *)calloc(22, sizeof(int *));
+    }
+    for (int i=0;i<ncomp;i++){
+      // Store percentiles
+      double norm_S = cumu_rho_S[i][nbin];
+      if (norm_S == 0 && i == 9) continue;
+      for (int ibin=0; ibin<=nbin;ibin++){
+        double Pnorm_S = cumu_rho_S[i][ibin] / norm_S;
+        int intp_S = Pnorm_S*20;
+        if (ibinptiles_S[i][intp_S] == 0) ibinptiles_S[i][intp_S] = (intp_S==0) ? 1 : ibin+0.5;
+      }
+    }
+
+    /*** Monte Carlo simulation ***/
+
+    NSIMU = AREA*cumu_rho_all_S[nbin]*fSIMU + 0.5;
+
+    // dl *= sqrt(fSIMU); // Consider AREA as fSIMU*AREA
+    // db *= sqrt(fSIMU); // Consider AREA as fSIMU*AREA
+
+    printf ("#\n# %dth grid: (l, b, A%src_range, AREA, nEJK)= ( %.4f deg, %.4f deg, %.2f - %.2f mag, %.2f x %.3f min^2, %3d )\n",igrids,MAG[iMag],lSIMU, bSIMU,AIrc*EJKmin,AIrc*EJKmax, AREA,fSIMU,nEJK);
+    if (Isen - Isst > 0){
+      printf ("#   %ld (= %.3e min^-2 x %.2f min^2 x %.3f ) stars in %.2f < %s < %.2f up to %d pc will be simulated.\n",NSIMU,cumu_rho_all_S[nbin],AREA,fSIMU,Isst,MAG[iMag],Isen, Dmax);
+    }else{
+      printf ("#   %ld (= %.3e min^-2 x %.2f min^2 x %.3f ) stars incl. WD, NS, BH in all mag range up to %d pc will be simulated.\n",NSIMU, cumu_rho_all_S[nbin],AREA,fSIMU, Dmax);
+    }
+    printf("#   (A%s0_range, Dmean, hscale)= ( %.2f - %.2f mag, %.0f pc, %.0f pc)\n",MAG[iMag],AI0*EJKmin,AI0*EJKmax,Dmean,hscale);
+    if (NSIMU == 0){
+      printf ("# NSIMU = %ld. Consider to increase fSIMU if AHrc is not very large. Skip.\n",NSIMU);
+      free (Alams);  
+      free (D);  
+      free (cumu_rho_all_S);
+      for (int i=0; i<ncomp; i++){
+        for (int j=0; j<nbin+1; j++){
+          free (cumu_P_EJKs[i][j]);
+        }
+        free (rhoD_S[i]    );
+        free (cumu_rho_S[i]);
+        free (ibinptiles_S[i]);
+        free (cumu_P_EJKs[i]);
+      }
+      free (rhoD_S    );
+      free (cumu_rho_S);
+      free (ibinptiles_S);
+      free (cumu_P_EJKs);
+      igrids++;
+      continue;
+    }
+    double getcumu2xist (int n, double *x, double *F, double *f, double Freq, int ist, int inv);
+    if (VERBOSITY >= 1){ 
+      if (HWBAND)
+        printf("# Hw-mag %4s-mag", MAG[0]);
+      else
+        printf("# %2s-mag", MAG[0]);
+      for (int iband=1; iband < nband; iband++){
+        printf (" %4s-mag", MAG[iband]);
+      }
+      if (VERBOSITY == 3){
+        for (int iband=0; iband < nband; iband++){
+          printf ("  A%-4s", MAG[iband]);
+        }
+        printf ("        Mass      Radius   Dist.      mu_l      mu_b            l            b cls fREM");
+      }else{
+        printf ("        Mass      Radius   Dist.      mu_l      mu_b  A%-4s            l            b cls fREM", MAG[iMag]);
+      }
+    }
+    if (VERBOSITY >= 2) printf ("   InitialMass      v_x      v_y      v_z");
+    if (VERBOSITY >= 1 && BINARY    == 1) printf ("         q2         aL     aLpmin BL");
+    if (VERBOSITY >= 1) printf ("\n");
+    for (long j=0; j< NSIMU; j++){
+       double ran, cumu, addGamma = 1;
+       int inttmp, kst;
+       // pick D_s
+       ran = ran1(); 
+       cumu = 0;
+       int i_s;
+       for (i_s=0;i_s<ncomp;i_s++){
+          cumu += cumu_rho_S[i_s][nbin]/cumu_rho_all_S[nbin];
+          if (ran < cumu) break;
+       }
+       if (i_s == ncomp){ // Sometimes happened
+         j--;
+         continue; 
+       }
+       // double tau_s = (i_s == 8) ? mageB + sageB*gasdev() : medtauds[i_s];
+       double tau_s = (i_s == 9) ? mageND 
+                    : (i_s == 8) ? mageB
+                    : medtauds[i_s];
+       ran = ran1();
+       inttmp = ran*20;
+       kst = 1;
+       for (int itmp = inttmp; itmp > 0; itmp--){
+         kst = ibinptiles_S[i_s][itmp];
+         if (kst > 0) break;
+       }
+       ran = ran* cumu_rho_S[i_s][nbin];
+       double D_s = getcumu2xist(nbin+1, D, cumu_rho_S[i_s],rhoD_S[i_s],ran,kst,0);
+       // printf("i_s= %d D_s= %.1f\n",i_s, D_s);
+
+       // Pick EJK, l, b
+       double EJK, l_s, b_s;
+       int iEJK_s = 0;
+       if (nEJK > 1){
+         int nbinDs = floor(D_s/dD);
+         ran = ran1() * cumu_P_EJKs[i_s][nbinDs][nEJK-1];
+         iEJK_s = get_khi(nEJK, cumu_P_EJKs[i_s][nbinDs], ran);
+         // printf("ran= %f, Pmin= %f, Pmax= %f, iEJK_s= %d\n", ran, cumu_P_EJKs[i_s][nbinDs][0], cumu_P_EJKs[i_s][nbinDs][nEJK-1], iEJK_s);
+         // printf("%d %f %f %f %f %f\n",iEJK_s,EJK,lcens[iEJK_s],dls[iEJK_s],bcens[iEJK_s],dbs[iEJK_s]);
+         if (iEJK_s < 0 || iEJK_s >= nEJK){
+           printf("ERROR: iEJK_s= %d!!\n",iEJK_s);
+           exit(1);
+         }
+       }
+       EJK = EJKs[iEJK_s];
+       l_s = lcens[iEJK_s] + (ran1() - 0.5) * dls[iEJK_s];
+       b_s = bcens[iEJK_s] + (ran1() - 0.5) * dbs[iEJK_s];
+       // printf("%d %f %f %f %f %f\n",iEJK_s,EJK,lcens[iEJK_s],dls[iEJK_s],bcens[iEJK_s],dbs[iEJK_s]);
+
+       // pick velocities
+       void get_vxyz_ran(double *vxyz, int i, double tau, double D, double lD, double bD); //
+       double vxyz_S[3] = {};
+       // get_vxyz_ran(vxyz_S, i_s, tau_s, D_s, lDs[idata], bDs[idata]);
+       get_vxyz_ran(vxyz_S, i_s, tau_s, D_s, l_s, b_s);
+       double vx_s = vxyz_S[0];
+       double vy_s = vxyz_S[1];
+       double vz_s = vxyz_S[2];
+
+       // Pick a source mass, mag, radius 
+       double logM, Mini_s, M_s, Rad_s, mag_s[6] = {};
+       // double f_Alam = 1 - exp(-D_s/hscale);
+       double f_Alam = (1 - exp(-D_s/hscale)) * EJK;
+       double AI_s  = AI0 * f_Alam;
+       double DM_s  = 5 * log10(0.1*(D_s + 0.1)); // source ditance modulus
+       double extI  = AI_s + DM_s;
+       int fREM = 0;
+       if (Isen - Isst > 0){
+         /*************************************************************/
+         /* Pick a star assuming non-remnant when Magrange is given.  */
+         /* This is designed to give a source catalog                 */
+         /*************************************************************/
+         double MIen = Isen - extI;
+         double MIst = Isst - extI;
+         int ist = 0;
+         // ist is 0 at this moment.
+         double Msmin = getx2y_ist(nMLrel[i_s], Mags[iMag][i_s], Minis[i_s], MIen, &ist); // less massive, ist should be smaller
+         // printf ("# ist= %4d MIen= %7.3f -> Msmin= %.6f",ist,MIen,Msmin);
+         // ist is no longer 0 at this moment.
+         double Msmax = getx2y_ist(nMLrel[i_s], Mags[iMag][i_s], Minis[i_s], MIst, &ist); // more massive, ist should be larger
+         // printf (" 2 ist= %4d MIst= %7.3f -> Msmax= %.6f\n",ist,MIst,Msmax);
+         if (Msmin == 0 && Msmax > 0){ // when MIen is too faint
+           Msmin = Ml; // Consider down to minimum mass
+         }else if (Msmin > 0 && Msmax == 0){ // when MIst is too bright
+           Msmax = Minis[i_s][nMLrel[i_s]-1];
+         }else if (Msmin == 0 && Msmax == 0 && MIen - MIst > 20){
+           Msmin = Ml; // Consider down to minimum mass
+           Msmax = Minis[i_s][nMLrel[i_s]-1];
+         }else if (Msmin == 0 && Msmax == 0 && MIen - Mags[iMag][i_s][nMLrel[i_s]-1] > -2){
+           // A case where Msen = Magmin - infinitesimal, sometimes happen when Magrange is brightest region
+           // Because Magmin is not stored, Mags[iMag][i_s][nMLrel[i_s]-1] is used instead
+           nerror ++;
+           j--;
+           continue;
+         }else if (Msmin == 0 && Msmax == 0){
+           printf("Error: Something goes wrong, exit!\n");
+           exit(1);
+         }
+         if (Msmax > Minvs[i_s]) Msmax = Minis[i_s][nMLrel[i_s]-1];
+         if (Msmin < Ml) Msmin = Ml;
+         // printf ("# Msmin= %.6f Msmax= %.6f",Msmin,Msmax);
+         // double Pmin  = interp_x(nm+1, PlogM_cum_norm_B,  logMst, dlogM, log10(Msmin));
+         // double Pmax  = interp_x(nm+1, PlogM_cum_norm_B,  logMst, dlogM, log10(Msmax));
+         double Pmin  = interp_xquad(nm+1, PlogM_cum_norm_B, PlogM_B, logMst, dlogM, log10(Msmin));
+         double Pmax  = interp_xquad(nm+1, PlogM_cum_norm_B, PlogM_B, logMst, dlogM, log10(Msmax));
+         double MI_s; // source absolute mag
+         double Minitmp;
+         do {
+           ran = Pmin + (Pmax - Pmin) * ran1();
+           inttmp = ran*20;
+           kst = 1; // to avoid bug when inttmp = 0
+           for (int itmp = inttmp; itmp > 0; itmp--){
+             kst = imptiles_B[itmp] - 1; 
+             if (kst > 0) break;
+           }
+           logM = getcumu2xist(nm+1, logMass_B, PlogM_cum_norm_B, PlogM_B, ran, kst, 0);
+           Mini_s = pow(10, logM);
+           Minitmp = (Mini_s > Minis[i_s][0]) ? Mini_s : Minis[i_s][0];
+           ist = 0;
+           MI_s = getx2y_ist(nMLrel[i_s], Minis[i_s], Mags[iMag][i_s], Minitmp, &ist);
+           // printf (" picked mass= %.6f abmag= %.6f",Mini_s, MI_s);
+           if (Mini_s < Msmin || Mini_s > Msmax)
+             printf ("Warning!! picked mass= %.10f isn't between %.10f -- %.10f!!\n",Mini_s, Msmin, Msmax);
+         }while (MI_s < MIst || MI_s > MIen); // can meet this when variable stage is included
+         // Pick current mass and radius and calculate I_s
+         // The same ist as the last one (for a calculation of accepted MIs) should be used 
+         // printf (" ist1= %4d",ist);
+         M_s   = (Minitmp != Mini_s) ? Mini_s : getx2y_ist(nMLrel[i_s], Minis[i_s], MPDs[i_s],  Minitmp, &ist);
+         Rad_s = getx2y_ist(nMLrel[i_s], Minis[i_s], Rstars[i_s], Minitmp, &ist);
+         mag_s[iMag] = MI_s + extI;
+         for (int iband=0; iband<nband; iband++){
+           if (iband == iMag) continue;
+           double ext_lam = Alams[iband] * f_Alam + DM_s;
+           mag_s[iband] = ((iband == 3 || iband == 5) && Mini_s < 0.09 && ROMAN) ? 99 
+                        : getx2y_ist(nMLrel[i_s], Minis[i_s], Mags[iband][i_s], Minitmp, &ist) + ext_lam;
+         }
+         // if (Minitmp != Mini_s) printf("Mini_s= %.7f Mtmp= %.7f M_s= %.7f Rad_s= %.8f MI_s= %.6f\n",Mini_s,Minitmp,M_s,Rad_s,MI_s);
+         // printf (" ist2= %4d M_s= %.6f Rad= %9.3f\n",ist,M_s,Rad_s);
+       }else{ // when Magrange is not specified
+         /*************************************************************/
+         /* Pick a star from all initial mass range including remnant */
+         /* This is designed to give a lens catalog                   */
+         /*************************************************************/
+         ran = ran1();
+         inttmp = ran*20;
+         kst = 1; // to avoid bug when inttmp = 0
+         for (int itmp = inttmp; itmp > 0; itmp--){
+           kst = imptiles_B[itmp] - 1; 
+           if (kst > 0) break;
+         }
+         logM = getcumu2xist(nm, logMass_B, PlogM_cum_norm_B, PlogM_B, ran, kst, 0);
+         Mini_s = pow(10, logM);
+
+         // Reject or Evolve into WD, NS, or BH
+         double Minidie;
+         if (i_s == 8){ // bulge 
+           int iage_s = tau_s * 2 + 0.5;
+           iage_s *= 50;
+           int itmp = (iage_s - agesB[0])/(agesB[1] - agesB[0]);
+           Minidie = MinidieB[itmp];
+         }else if(i_s == 9){ // NSD
+           Minidie = MinidieND[0]; // mono-age currently
+         }else if(i_s == 7){ // thick disk
+           Minidie = MinidieD[nageD-2]; // nageD-1: halo
+         }else{ // thin disk
+           int iage_s = tau_s * 100 + 0.5;
+           iage_s = (iage_s % 5 > 2.5) ? iage_s + (5 - iage_s % 5) : iage_s - iage_s % 5;
+           if (iage_s < 5) iage_s = 5;
+           int itmp = (iage_s - agesD[0])/(agesD[1] - agesD[0]);
+           Minidie = MinidieD[itmp];
+         }
+         // print "tau= tau_s -> iage= iage_s, Minidie= Minidie{iage_s}\n";
+
+         void Mini2Mrem (double *pout, double M, int mean); 
+         // printf "# iage_s M_s > Minidie{iage_s}" if M_s > Minidie{iage_s}; 
+         if (Mini_s > Minidie){ // remnant
+           double pout[2] = {};
+           Mini2Mrem(pout, Mini_s, 0);  // 0 : random
+           M_s  = pout[0]; // Mass after evolution
+           fREM = pout[1]; // fREM should be double if mean == 1, but int here cuz mean == 0
+           Rad_s = 1.0/109.0; // Earth radius for white dwarf
+           if (fREM >= 2){ // Add kick velocity for NS or BH
+             // double phitmp = ran1()*2*PI; // not correct
+             // double thetatmp = ran1()*PI;
+             double thetatmp = asin(1 - 2*ran1());
+             double phitmp   = ran1()*2*PI - PI;
+             double vkick = (fREM == 2) ? 350 : 100;  // Table 2 of Lam et al. 2020
+             double vxadd =  vkick * cos(thetatmp) * cos(phitmp);
+             double vyadd =  vkick * cos(thetatmp) * sin(phitmp);
+             double vzadd =  vkick * sin(thetatmp);
+             vx_s  = vx_s + vxadd;
+             vy_s  = vy_s + vyadd;
+             vz_s  = vz_s + vzadd;
+             Rad_s /= 600.0; // ~ 10 km for NS/BH
+           }
+           for (int iband=0; iband<nband; iband++){
+             mag_s[iband] = 99; // not accurate cuz WD can have a detectable brightness
+           }
+         }else{ // non-remnant
+           int ist = 0;
+           double Minitmp = (Mini_s > Minis[i_s][0]) ? Mini_s : Minis[i_s][0];
+           M_s   = (Minitmp != Mini_s) ? Mini_s : getx2y_ist(nMLrel[i_s], Minis[i_s], MPDs[i_s],   Minitmp, &ist);
+           Rad_s = getx2y_ist(nMLrel[i_s], Minis[i_s], Rstars[i_s], Minitmp, &ist);
+           for (int iband=0; iband<nband; iband++){
+             double ext_lam = Alams[iband] * f_Alam + DM_s;
+             mag_s[iband] = ((iband == 3 || iband == 5) && Mini_s < 0.09 && ROMAN) ? 99 
+                          : getx2y_ist(nMLrel[i_s], Minis[i_s], Mags[iband][i_s], Minitmp, &ist) + ext_lam;
+           }
+           // if (Minitmp != Mini_s) printf("Mini_s= %.7f Mtmp= %.7f M_s= %.7f Rad_s= %.8f I_s= %.6f\n",Mini_s,Minitmp,M_s,Rad_s,I_s);
+         }
+       }
+
+       // Binary system assuming the picked M is a primary
+       // -- Binary distribution developed by Koshimoto+2020, AJ, 159, 268 is used
+       int swl = 0; // 0: single, 1: close binary, 2: wide binary
+       double Mini_s2 = 99, M_s2 = 99, Rad_s2= 0, q2 = 99, al = 99, alpmin = 99, apdetL = 99;
+       double mag_s2[6] = {};
+       if (BINARY && fREM == 0 && Mini_s > MBINMIN){   // Remnant in a binary should be ideally considered, but currently not yet
+         double mult = 0.196 + 0.255*Mini_s; // Table 2 of Koshimoto+20, AJ, 159, 268
+         if (mult > MAXMULT) mult = MAXMULT;
+         ran = ran1();
+         double coeff;
+         if (ran < 0.5 * mult){ // close binary
+           swl = 1; // 0: single, 1: close binary, 2: wide binary
+           double gamma =  1.16 - 2.79*log10(Mini_s); // Table 2 of Koshimoto+20, AJ, 159, 268
+           if (gamma > MAXGAMMA) gamma = MAXGAMMA;
+           if (gamma < MINGAMMA) gamma = MINGAMMA;
+           coeff = -1;
+           double tmp = pow(0.1, gamma+1); // because we ignore q < 0.1
+           q2 = pow( (1-tmp)*ran1() + tmp, 1/(gamma+1) ); // inverse transform sampling
+         }else if(ran < mult){
+           swl = 2; // 0: single, 1: close binary, 2: wide binary
+           double gamma = (Mini_s>=0.344) ? 0 : -3.09 - 6.67*log10(Mini_s); // Table 2 of Koshimoto+20, AJ, 159, 268 
+           if (gamma > MAXGAMMA) gamma = MAXGAMMA;
+           if (gamma < MINGAMMA) gamma = MINGAMMA;
+           coeff = 1;
+           double tmp = pow(0.1, gamma+1); // because we ignore q < 0.1
+           q2 = pow( (1-tmp)*ran1() + tmp, 1/(gamma+1) ); // inverse transform sampling
+         }
+         if (swl > 0){
+           Mini_s2 = Mini_s * q2;
+           //   pick up aproj
+           double pout[2] = {};
+           void getaproj(double *pout, double M1, double M2, int coeff);
+           getaproj(pout, Mini_s, Mini_s2, coeff);
+           al     = (pout[0] < 99) ? pow(10.0, pout[0]) : -1;
+           alpmin = pout[1];
+           int ist = 0;
+           double Minitmp = (Mini_s2 > Minis[i_s][0]) ? Mini_s2 : Minis[i_s][0];
+           M_s2   = (Minitmp != Mini_s2) ? Mini_s2 : getx2y_ist(nMLrel[i_s], Minis[i_s], MPDs[i_s],   Minitmp, &ist);
+           Rad_s2 = getx2y_ist(nMLrel[i_s], Minis[i_s], Rstars[i_s], Minitmp, &ist);
+           for (int iband=0; iband<nband; iband++){
+             double ext_lam = Alams[iband] * f_Alam + DM_s;
+             mag_s2[iband] = ((iband == 3 || iband == 5) && Mini_s2 < 0.09 && ROMAN) ? 99 
+                           : getx2y_ist(nMLrel[i_s], Minis[i_s], Mags[iband][i_s], Minitmp, &ist) + ext_lam;
+           }
+           if ((mag_s2[iMag] > Isst && mag_s2[iMag] < Isen) || Isen - Isst == 0)
+             j++; // Increase the count when companion (in the Magrange) exists
+         }
+       }
+
+       // Relative velocities
+       double vxrel_s = vx_s - vxsun;
+       double vyrel_s = vy_s - vysun;
+       double vzrel_s = vz_s - vzsun;
+       double muSl   = (vxrel_s*sinl      + vyrel_s*cosl)*KS2MY/D_s;
+       double muSb   = (vxrel_s*cosl*sinb - vyrel_s*sinl*sinb + vzrel_s*cosb)*KS2MY/D_s;
+
+       if (VERBOSITY >= 1){ 
+         if (HWBAND){
+           double J = (ROMAN) ? mag_s[0] : mag_s[2];
+           double H = (ROMAN) ? mag_s[1] : mag_s[3];
+           double JmH = J-H;
+           double Hw = 0.78*J + 0.22*H -0.03*JmH*JmH;
+           printf("%8.4f ", Hw);
+         }
+         for (int iband=0; iband < nband; iband++){
+           printf ("%8.4f ", mag_s[iband]);
+         }
+         if (VERBOSITY == 3){
+           for (int iband=0; iband < nband; iband++){
+             printf ("%6.3f ", Alams[iband] * f_Alam);
+           }
+           printf("%.5e %.5e %7.1f %9.4f %9.4f %12.9f %12.9f %3d %4d", 
+                        M_s, Rad_s, D_s, muSl, muSb, l_s, b_s, i_s, fREM);
+         }else{
+           printf("%.5e %.5e %7.1f %9.4f %9.4f %6.3f %12.9f %12.9f %3d %4d", 
+                        M_s, Rad_s, D_s, muSl, muSb, AI_s, l_s, b_s, i_s, fREM);
+         }
+       }
+       if (VERBOSITY >= 2) printf(" %.7e %8.3f %8.3f %8.3f", Mini_s, vx_s,vy_s,vz_s);
+       if (VERBOSITY >= 1 && BINARY == 1){
+         if (swl > 0){
+           printf(" %.4e %.4e %.4e %2d\n",q2, al, alpmin, swl);
+           if (VERBOSITY >= 1){ 
+             if (HWBAND){
+               double J = (ROMAN) ? mag_s2[0] : mag_s2[2];
+               double H = (ROMAN) ? mag_s2[1] : mag_s2[3];
+               double JmH = J-H;
+               double Hw = 0.78*J + 0.22*H -0.03*JmH*JmH;
+               printf("%8.4f ", Hw);
+             }
+             for (int iband=0; iband < nband; iband++){
+               printf ("%8.4f ", mag_s2[iband]);
+             }
+             if (VERBOSITY == 3){
+               for (int iband=0; iband < nband; iband++){
+                 printf ("%6.3f ", Alams[iband] * f_Alam);
+               }
+               printf("%.5e %.5e %7.1f %9.4f %9.4f %12.9f %12.9f %3d %4d", 
+                            M_s2, Rad_s2, D_s, muSl, muSb, l_s, b_s, i_s, fREM);
+             }else{
+               printf("%.5e %.5e %7.1f %9.4f %9.4f %6.3f %12.9f %12.9f %3d %4d", 
+                            M_s2, Rad_s2, D_s, muSl, muSb, AI_s, l_s, b_s, i_s, fREM);
+             }
+           }
+           if (VERBOSITY >= 2) printf(" %.7e %8.3f %8.3f %8.3f", Mini_s2, vx_s,vy_s,vz_s);
+         }
+         printf(" %.4e %.4e %.4e %2d",q2, al, alpmin, swl);
+       }
+       if (VERBOSITY >= 1) printf("\n");
+       // Count all MS mass and stars
+       if (fREM == 0){
+         allmass  += Mini_s;
+         allstars += 1;
+         if (BINARY && swl > 0){
+           allmass  += Mini_s2;
+           allstars += 1;
+         }
+       }
+       // Count each component
+       ncntcomp[i_s] += 1;
+       // Count Binary
+       ncntall += 1;
+       if (swl == 0) ncnts  += 1;
+       if (swl == 1) ncntbCD += 1;
+       if (swl == 2) ncntbWD += 1;
+       // Count Remnant ()
+       if (fREM == 0 && M_s < 0.08) nBD += 1; // missing BD binaries where M_s (total mass) > 0.08
+       if (fREM == 0 && M_s > 0.08) nMS += 1;
+       if (fREM == 1) nWD += 1;
+       if (fREM == 2) nNS += 1;
+       if (fREM == 3) nBH += 1;
+    }
+    
+    // gsl_rng_free(r);
+    
+    free (Alams);  
+    free (D);  
+    free (cumu_rho_all_S);
+    for (int i=0; i<ncomp; i++){
+      for (int j=0; j<nbin+1; j++){
+        free (cumu_P_EJKs[i][j]);
+      }
+      free (rhoD_S[i]    );
+      free (cumu_rho_S[i]);
+      free (ibinptiles_S[i]);
+      free (cumu_P_EJKs[i]);
+    }
+    free (rhoD_S    );
+    free (cumu_rho_S);
+    free (ibinptiles_S);
+    free (cumu_P_EJKs);
+    igrids++;
+  }
+  fclose(fp);
+  printf ("# sumM_MS/sumN_MS= %9.2f / %6.0f = %.6f Msun/*\n", allmass, allstars, allmass/allstars);
+  // printf ("# nerror= %d\n", nerror);
+  if (BINARY == 1) printf ("# (n_single n_binwide n_binclose)/n_all= ( %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f )\n", ncnts, ncntbWD, ncntbCD, ncntall,ncnts/ncntall,ncntbWD/ncntall,ncntbCD/ncntall);
+  printf ("# (n_thin1-7 n_thick n_bar n_nsd)/n_all= ( %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f )\n", ncntcomp[0], ncntcomp[1], ncntcomp[2], ncntcomp[3], ncntcomp[4], ncntcomp[5], ncntcomp[6], ncntcomp[7], ncntcomp[8], ncntcomp[9], ncntall, ncntcomp[0]/ncntall, ncntcomp[1]/ncntall, ncntcomp[2]/ncntall, ncntcomp[3]/ncntall, ncntcomp[4]/ncntall, ncntcomp[5]/ncntall, ncntcomp[6]/ncntall, ncntcomp[7]/ncntall, ncntcomp[8]/ncntall, ncntcomp[9]/ncntall);
+  printf ("# (n_BD n_MS n_WD n_NS n_BH)/n_all= ( %6.0f %6.0f %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f %.6f %.6f )\n", nBD, nMS, nWD, nNS, nBH,ncntall, nBD/ncntall, nMS/ncntall, nWD/ncntall, nNS/ncntall, nBH/ncntall);
+  if (Isen - Isst > 0){
+    for (int i=0; i<ncomp; i++){
+       free(CumuN_MIs[i]);
+    }
+    free(CumuN_MIs);
+  }
+  if (NSD == 3){
+    for (int i=0; i<nzND; i++){
+      for (int j=0; j<nRND; j++){
+        free(logsigvNDs[i][j]);
+      }
+      free(logrhoNDs[i]);
+      free(vphiNDs[i]);
+      free(corRzNDs[i]);
+      free(logsigvNDs[i]);
+    }
+    free(logrhoNDs);
+    free(vphiNDs);
+    free(corRzNDs);
+    free(logsigvNDs);
+  }
+  free(logMass_B       );
+  free(PlogM_cum_norm_B);
+  free(PlogM_B         );
+  free(imptiles_B      );
+  free(lDs);
+  free(bDs);
+  for (int i=0; i<nz; i++){
+    for (int j=0; j<nR; j++){
+      for (int k=0; k<ndisk; k++){
+        free(fgsShu[i][j][k]);
+        free(PRRgShus[i][j][k]);
+        free(cumu_PRRgs[i][j][k]);
+        free(kptiles[i][j][k]);
+      }
+      free(fgsShu[i][j]);
+      free(PRRgShus[i][j]);
+      free(cumu_PRRgs[i][j]);
+      free(kptiles[i][j]);
+      free(n_fgsShu[i][j]);
+    }
+    free(fgsShu[i]);
+    free(PRRgShus[i]);
+    free(cumu_PRRgs[i]);
+    free(kptiles[i]);
+    free(n_fgsShu[i]);
+  }
+  free(fgsShu);
+  free(PRRgShus);
+  free(cumu_PRRgs);
+  free(kptiles);
+  free(n_fgsShu);
+  for (int i=0; i<ncomp; i++){
+    free(Minis[i]);
+    free(MPDs[i]);
+    free(Rstars[i]);
+    free(MLfiles[i]);
+  }
+  free(Minis);
+  free(MPDs);
+  free(Rstars);
+  free(Minvs);
+  free(MLfiles);
+  for (int i=0; i<nband; i++){
+    for (int j=0; j<ncomp; j++){
+      free(Mags[i][j]);
+    }
+    free(Mags[i]);
+    free(MAG[i]);
+  }
+  free(Mags);
+  free(MAG);
+  return 0;
+} // end main
 
 //----------------
 double getAlamAV_WC19(double lam){ // Calculate Eqs.(9)-(10) of Wang & Chen (2019), ApJ, 877, 116
@@ -1862,611 +3103,3 @@ void interp_xy_coeff(int nx, int ny, double *as, double xst, double yst, double 
     as[3] =      xres  *      yres ;
   }
 }
-
-
-
-
-
-int main(int argc,char **argv)
-{
-  //--- read parameters ---
-  long seed    = getOptioni(argc,argv,"seed", 1, 12304357); // seed of random number
-  gsl_rng_env_setup();
-  T = gsl_rng_default;
-  r = gsl_rng_alloc (T);
-  gsl_rng_set(r, seed); 
-  long seed0 = seed;
-  //--- Set params for Galactic model (default: E+E_X model in Koshimoto+2021) ---
-  double M0_B      = getOptiond(argc,argv,"M0", 1, 1.0);
-  double M1_B      = getOptiond(argc,argv,"M1", 1, 0.859770466578045);
-  double M2_B      = getOptiond(argc,argv,"M2", 1, 0.08);
-  double M3_B      = getOptiond(argc,argv,"M3", 1, 0.01);
-  double Ml        = getOptiond(argc,argv,"Ml", 1, 0.001); // default : w/o planetary mass
-  double Mu        = getOptiond(argc,argv,"Mu", 1, 120); // need to be fixed!!!. Affect normalizing bulge coeffs 
-  double alpha1_B  = getOptiond(argc,argv,"alpha1", 1, -2.32279457078378);
-  double alpha2_B  = getOptiond(argc,argv,"alpha2", 1, -1.13449983242887);
-  double alpha3_B  = getOptiond(argc,argv,"alpha3", 1, -0.175862190587576);
-  double alpha0_B  = getOptiond(argc,argv,"alpha0", 1,  alpha1_B);
-  double alpha4_B  = getOptiond(argc,argv,"alpha4", 1,  alpha3_B);
-  DISK     = getOptiond(argc,argv,"DISK",   1,    2); // 0: wo disk, 1: w/ disk+hole, 2: w/ disk like P17
-  rhot0    = getOptiond(argc,argv,"rhot0",   1,   0.042); // local thin disk density, Msun/pc^3 (Bovy17: 0.042 +- 0.002 incl.BD)
-  hDISK     = getOptiond(argc,argv,"hDISK",  1,    0); // 0: const scale height, 1: linear scale height
-  addX      = getOptiond(argc,argv,"addX",   1,    5); // 0: no X-shape,  >=5: use model==addX as X-shape 
-  model     = getOptiond(argc,argv,"model",  1,    5); // 
-  R0     = getOptiond(argc,argv,"R0",     1,   8160); // 
-  thetaD = getOptiond(argc,argv,"thetaD", 1,     27); // 
-  frho0b = getOptiond(argc,argv,"frho0b", 1,  0.839014514507754); // 
-  Rc     = getOptiond(argc,argv,"Rc", 1,  2631.78535429573); //
-  zb_c   = getOptiond(argc,argv,"zb_c", 1,  1e+6); //
-  if (model >= 4 && model <= 8){
-    x0_1     = getOptiond(argc,argv,"x0", 1,  930.623146993329); // 
-    y0_1     = getOptiond(argc,argv,"y0", 1,  370.784386649364); // 
-    z0_1     = getOptiond(argc,argv,"z0", 1,  239.547516030578); // 
-    C1     = getOptiond(argc,argv,"C1", 1,  1.20011972384328); // 
-    C2     = getOptiond(argc,argv,"C2", 1,  4.09326795684828); // 
-    C3     = getOptiond(argc,argv,"C3", 1,  1.0000); // 
-  }
-  if (addX >= 5){
-    x0_X = getOptiond(argc,argv,"x0_X", 1,  278.027059842233); // 
-    y0_X = getOptiond(argc,argv,"y0_X", 1,  176.318528789193); // 
-    z0_X = getOptiond(argc,argv,"z0_X", 1,  286.791941602401); // 
-    C1_X = getOptiond(argc,argv,"C1_X", 1,  1.3087131258784); // 
-    C2_X = getOptiond(argc,argv,"C2_X", 1,  2.21745322869032); // 
-    b_zX = getOptiond(argc,argv,"b_zX", 1,  1.37774815817195); // b_zX, slope of "X" of X-shape
-    fX   = getOptiond(argc,argv,"fX",   1,  1.43975636704683); // fraction of X-shape
-    Rc_X = getOptiond(argc,argv,"Rc_X",  1,  1301.63829617294); // 
-  }
-  b_zY   = getOptiond(argc,argv,"b_zY", 1, 0); //
-
-  // ----- Kinematic parameters ------
-  // for bar kinematic
-  Omega_p  = getOptiond(argc,argv,"Omega_p",  1, 47.4105844018699);
-  model_vb = getOptiond(argc,argv,"model_vb", 1,    5); // 
-  x0_vb    = getOptiond(argc,argv,"x0_vb"  ,  1, 858.106595717275);
-  y0_vb    = getOptiond(argc,argv,"y0_vb"  ,  1, 3217.04987721548);
-  z0_vb    = getOptiond(argc,argv,"z0_vb"  ,  1, 950.690583433628);
-  C1_vb    = getOptiond(argc,argv,"C1_vb"  ,  1, 4.25236641149869);
-  C2_vb    = getOptiond(argc,argv,"C2_vb"  ,  1, 1.02531652066343);
-  C3_vb    = getOptiond(argc,argv,"C3_vb"  ,  1, 1);
-  sigx_vb  = getOptiond(argc,argv,"sigx_vb",  1, 151.854794853683);
-  sigy_vb  = getOptiond(argc,argv,"sigy_vb",  1, 78.0278905748233);
-  sigz_vb  = getOptiond(argc,argv,"sigz_vb",  1, 81.9641955092164);
-  sigx_vb0 = getOptiond(argc,argv,"sigx_vb0",  1,  63.9939241108675);
-  sigy_vb0 = getOptiond(argc,argv,"sigy_vb0",  1,  75.8180486866697);
-  sigz_vb0 = getOptiond(argc,argv,"sigz_vb0",  1,  71.2336430487113);
-  vx_str   = getOptiond(argc,argv,"vx_str" ,  1,    43.0364707040617);
-  y0_str   = getOptiond(argc,argv,"y0_str" ,  1,    406.558313420815);
-  model_vbz = getOptiond(argc,argv,"model_vbz",  1,    5); // 
-  x0_vbz    = getOptiond(argc,argv,"x0_vbz"  ,  1, 558.430182718529);
-  y0_vbz    = getOptiond(argc,argv,"y0_vbz"  ,  1, 2003.21703656302);
-  z0_vbz    = getOptiond(argc,argv,"z0_vbz"  ,  1, 3823.20855045157);
-  C1_vbz    = getOptiond(argc,argv,"C1_vbz"  ,  1, 3.71001266000693);
-  C2_vbz    = getOptiond(argc,argv,"C2_vbz"  ,  1, 1.07455173734341);
-  C3_vbz    = getOptiond(argc,argv,"C3_vbz"  ,  1, 1);
-
-  // for disk kinematic (default: all-z + flat z_d^{thin} model in Koshimoto+21)
-  hsigUt    = getOptiond(argc,argv,"hsigUt"  ,  1,  14300);// scale len of velo disp R (sigU) for thin
-  hsigWt    = getOptiond(argc,argv,"hsigWt"  ,  1,   5900);// scale len of velo disp Z (sigW) for thin
-  hsigUT    = getOptiond(argc,argv,"hsigUT"  ,  1, 180000);// scale len of velo disp R (sigU) for thick
-  hsigWT    = getOptiond(argc,argv,"hsigWT"  ,  1, 9400);  // scale len of velo disp Z (sigW) for thick
-  betaU     = getOptiond(argc,argv,"betaU"   ,  1, 0.32);  //  slope of age-sigU for thin
-  betaW     = getOptiond(argc,argv,"betaW"   ,  1, 0.77);  //  slope of age-sigW for thin
-  sigU10d   = getOptiond(argc,argv,"sigU10d" ,  1, 42.0);  // sigU for 10Gyr thin @Sunposi 
-  sigW10d   = getOptiond(argc,argv,"sigW10d" ,  1, 24.4);  // sigW for 10Gyr thin @Sunposi
-  sigU0td   = getOptiond(argc,argv,"sigU0td" ,  1, 75.0);  // sigU for thick @Sunposi
-  sigW0td   = getOptiond(argc,argv,"sigW0td" ,  1, 49.2);  // sigW for thick @Sunposi
-
-  // Use one of named models in Koshimoto+21
-  int E_fg0 = getOptiond(argc,argv,"E_fg0", 1, 0);
-  int G_fg0 = getOptiond(argc,argv,"G_fg0", 1, 0);
-  int EXE_fg0 = getOptiond(argc,argv,"EXE_fg0", 1, 0);
-  int GXG_fg0 = getOptiond(argc,argv,"GXG_fg0", 1, 0);
-  if (E_fg0 == 1){ // E model
-    model = 5, addX = 0;
-    M0_B = 1.0, M1_B = 0.843651488650385, M2_B = 0.08, M3_B = 0.01;
-    alpha1_B = -2.30708461042964, alpha2_B = -1.09811414023325, alpha3_B = -0.176687444667866;
-    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
-    R0= 8160, thetaD = 27, 
-    frho0b = 0.847695765083198, Rc = 2804.94024639663;
-    x0_1 = 668.323640191308, y0_1 = 277.674592258175, z0_1 = 235.344943180979, 
-    C1 = 1.40903573470129, C2 = 3.3497118832179, C3 = 1;
-    model_vb = 5, model_vbz = 5;
-    Omega_p = 49.5149910609312, vx_str = 48.7482280102778, y0_str = 392.515724264323,
-    sigx_vb  = 156.055410564041, sigy_vb  = 83.8197043324931, sigz_vb  = 86.3564038759999,
-    sigx_vb0 = 63.8292191277825, sigy_vb0 = 74.9469462226124, sigz_vb0 = 72.3085487545662,
-    x0_vb  = 823.387929122523, y0_vb  = 9288.51482678556, z0_vb  = 864.479916419292,
-    C1_vb  = 3.82820123451928, C2_vb  = 1.00573720627546,
-    x0_vbz = 511.063328964278, y0_vbz = 2896.01606378595, z0_vbz = 2189.7664883434,
-    C1_vbz = 3.04214421342047, C2_vbz = 1.00609904766722;
-  }
-  if (G_fg0 == 1){ // G model
-    model = 6, addX = 0;
-    M0_B = 1.0, M1_B = 0.896557393600988, M2_B = 0.08, M3_B = 0.01;
-    alpha1_B = -2.39628188518525, alpha2_B = -1.18451896148506, alpha3_B = 0.168672130848533;
-    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
-    R0= 8160, thetaD = 27, 
-    frho0b = 0.777347874844233, Rc = 4838.85613149588;
-    x0_1 = 1025.42128394916, y0_1 = 457.419718281149, z0_1 = 396.048253079423, 
-    C1 = 2.00928445577057, C2 = 3.9678518191928, C3 = 1;
-    model_vb = 5, model_vbz = 5;
-    Omega_p = 40.5174879673548, vx_str = 11.9026090372449, y0_str = 20.1384817812277,
-    sigx_vb  = 136.435675357212, sigy_vb  = 109.313291840218, sigz_vb  = 101.291432907346,
-    sigx_vb0 = 76.0453005937702, sigy_vb0 = 67.9783132842431, sigz_vb0 = 74.7117386554542,
-    x0_vb  = 1031.18302251324, y0_vb  = 2145.45565210108, z0_vb  = 727.233943973984,
-    C1_vb  = 4.9302429910108, C2_vb  = 1.04038121792228,
-    x0_vbz = 517.854475368706, y0_vbz = 1436.21008855387, z0_vbz = 1095.79181359292,
-    C1_vbz = 2.3091601785779, C2_vbz = 1.03832670354301;
-  }
-  if (EXE_fg0 == 1){ // E+E_X model
-    model = 5, addX = 5;
-    M0_B = 1.0, M1_B = 0.859770466578045, M2_B = 0.08, M3_B = 0.01;
-    alpha1_B = -2.32279457078378, alpha2_B = -1.13449983242887, alpha3_B = -0.175862190587576;
-    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
-    R0= 8160, thetaD = 27, 
-    frho0b = 0.839014514507754, Rc = 2631.78535429573;
-    x0_1 = 930.623146993329, y0_1 = 370.784386649364, z0_1 = 239.547516030578, 
-    C1 = 1.20011972384328, C2 = 4.09326795684828, C3 = 1;
-    model_vb = 5, model_vbz = 5;
-    Omega_p = 47.4105844018699, vx_str = 43.0364707040617, y0_str = 406.558313420815,
-    sigx_vb  = 151.854794853683, sigy_vb  = 78.0278905748233, sigz_vb  = 81.9641955092164,
-    sigx_vb0 = 63.9939241108675, sigy_vb0 = 75.8180486866697, sigz_vb0 = 71.2336430487113,
-    x0_vb  = 858.106595717275, y0_vb  = 3217.04987721548, z0_vb  = 950.690583433628,
-    C1_vb  = 4.25236641149869, C2_vb  = 1.02531652066343,
-    x0_vbz = 558.430182718529, y0_vbz = 2003.21703656302, z0_vbz = 3823.20855045157,
-    C1_vbz = 3.71001266000693, C2_vbz = 1.07455173734341;
-    x0_X = 278.027059842233, y0_X = 176.318528789193, z0_X = 286.791941602401,
-    C1_X = 1.3087131258784, C2_X = 2.21745322869032, 
-    b_zX = 1.37774815817195, fX = 1.43975636704683, Rc_X = 1301.63829617294;
-  }
-  if (GXG_fg0 == 1){ // G+G_X model
-    model = 6, addX = 6;
-    M0_B = 1.0, M1_B = 0.901747918318042, M2_B = 0.08, M3_B = 0.01;
-    alpha1_B = -2.32055781291126, alpha2_B = -1.16146692073597, alpha3_B = -0.222751835826612;
-    alpha0_B = alpha1_B, alpha4_B = alpha3_B;
-    R0= 8160, thetaD = 27, 
-    frho0b = 0.861982105059042, Rc = 2834.43172768484;
-    x0_1 = 1564.78976595399, y0_1 = 721.729645984158, z0_1 = 494.669973292979, 
-    C1 = 1.20141097225, C2 = 3.09254667088709, C3 = 1;
-    model_vb = 5, model_vbz = 5;
-    Omega_p = 45.9061365175252, vx_str = 28.250608437116, y0_str = 11.4387290790323,
-    sigx_vb  = 154.984185643613, sigy_vb  = 78.4783157632334, sigz_vb  = 83.2424209150283,
-    sigx_vb0 = 63.3834790223473, sigy_vb0 = 75.1951371572303, sigz_vb0 = 69.6076680158332,
-    x0_vb  = 939.470002303028, y0_vb  = 4228.61947632437, z0_vb  = 883.716365308057,
-    C1_vb  = 4.59067123072475, C2_vb  = 1.00961963171066,
-    x0_vbz = 699.073733500672, y0_vbz = 1729.91970395558, z0_vbz = 2028.24030134845,
-    C1_vbz = 4.84589813971794, C2_vbz = 1.01718557457505;
-    x0_X = 755.975821023038, y0_X = 312.17136920671, z0_X = 399.287597819655,
-    C1_X = 1.21131134854495, C2_X = 1.30388556329566,
-    b_zX = 1.37711800325276, fX = 2.99985800759016, Rc_X = 5174.00544959931;
-  }
-
-  costheta = cos(thetaD/180.0*PI) , sintheta = sin(thetaD/180.0*PI);
-
-  // To put Sgr A* on the GC
-  int CenSgrA = getOptioni(argc,argv, "CenSgrA", 1, 1);
-  double lSgrA = -0.056;
-  double bSgrA = -0.046;
-  if (CenSgrA == 1){
-    Dlb2xyz(R0, lSgrA, bSgrA, R0, xyzSgrA);
-    // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyzSgrA[0], xyzSgrA[1], xyzSgrA[2]);
-    // double xyz[3] = {};
-    // Dlb2xyz(R0, lSgrA, bSgrA, R0, xyz);
-    // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyz[0], xyz[1], xyz[2]);
-  }
-
-  // Store Mass Function and calculate normalization factors for density distributions
-  void store_IMF_nBs(int B, double *logMass, double *PlogM, double *PlogM_cum_norm, int *imptiles, double M0, double M1, double M2, double M3, double Ml, double Mu, double alpha1, double alpha2, double alpha3, double alpha4, double alpha0);
-  nm = 1000;
-  double *logMass_B, *PlogM_cum_norm_B, *PlogM_B;
-  int *imptiles_B;
-  logMass_B        = (double*)calloc(nm+1, sizeof(double *));
-  PlogM_B          = (double*)calloc(nm+1, sizeof(double *));
-  PlogM_cum_norm_B = (double*)calloc(nm+1, sizeof(double *));
-  imptiles_B       = (int*)calloc(22, sizeof(int *));
-  store_IMF_nBs(1, logMass_B, PlogM_B, PlogM_cum_norm_B, imptiles_B, M0_B, M1_B, M2_B, M3_B, Ml, Mu, alpha1_B, alpha2_B, alpha3_B, alpha4_B, alpha0_B);
-
-  // Read mass-luminosity relation and make LF for each component
-  double Isst   = getOptiond(argc,argv,"Magrange", 1, 0.0); // 
-  double Isen   = getOptiond(argc,argv,"Magrange", 2, 0.0); // 
-  int    ROMAN  = getOptiond(argc,argv,"ROMAN", 1, 0); // 
-  int    HWBAND = getOptiond(argc,argv,"HWBAND", 1, 0); // 
-  int    iMag0 = (ROMAN == 1) ? 4 : 3;
-  nband = (ROMAN == 1) ? 6 : 5; // (J, H, K, Z087, W146, F213) for Roman, (V, I, J, H, K) otherwise.
-  int iMag  = getOptiond(argc,argv,"iMag",  1, iMag0); // ROMAN 0: (0, 1, 2, 3, 4)= (V, I, J, H, K), default: H 
-                                                       //       1: (0, 1, 2, 3, 4, 5)= (J, H, K, Z087, W146, F213), default: W146 
-  if (iMag < 0 || iMag > nband) iMag = iMag0; 
-  double **Minis, **MPDs, **Rstars, *Minvs, ***Mags;
-  char **MAG, **MLfiles;
-  double lameff[6] = {};
-  int  nMLrel[10] = {490, 646, 790, 501, 373, 325, 291, 220, 301, 330}; // ncomp, data number of MLrelation file, later updated in get_ML_LF
-  Minis  = malloc(sizeof(double *) * ncomp);  // initial mass
-  MPDs   = malloc(sizeof(double *) * ncomp);  // current (present-day) mass
-  Rstars = malloc(sizeof(double *) * ncomp); // Stellar radius
-  Minvs  = calloc(ncomp, sizeof(double *)); // minimum initial mass after which mag gets fainter
-  MLfiles = malloc(sizeof(char *) * ncomp); // Path of MLfile for each comp
-  for (int i=0; i<ncomp; i++){
-    Minis[i] = calloc(nMLrel[i], sizeof(double *));
-    MPDs[i] = calloc(nMLrel[i], sizeof(double *));
-    Rstars[i]  = calloc(nMLrel[i], sizeof(double *));
-    MLfiles[i] = malloc(sizeof(char) * 61); // 60 is max number of characters of path for MLfile
-  }
-  MAG    = malloc(sizeof(char *) * nband); // Name of each band
-  Mags   = malloc(sizeof(double *) * nband);  // absolute mag, J, H, Ks, Z087, W146, F213
-  for (int j=0; j<nband; j++){
-    MAG[j]  = malloc(sizeof(char) * 8); // 7 is max characters of path for MLfile
-    Mags[j] = malloc(sizeof(double *) * ncomp);
-    for (int i=0; i<ncomp; i++){
-      Mags[j][i] = calloc(nMLrel[i], sizeof(double *));
-    }
-  }
-  void get_MAG_MLfiles(int ROMAN, char **MAG, char **MLfiles, double *lameff);
-  get_MAG_MLfiles(ROMAN, MAG, MLfiles, lameff);
-  int get_ML_LF(int calcLF, int ROMAN, char **MLfiles, int iMag, int *nMLrel, double **Minis, double **MPDs, double ***Mags, double **Rstars, double *Minvs, int Magst, int Magen, double dMag, double **CumuLFs, double *logMass, double *PlogM_cum_norm, double *PlogM); 
-  int Magst = -10;
-  int Magen =  Isen - 5;
-  if (Magen >  40) Magen =  40;
-  double dMag = 0.02;
-  int nLF = (Magen - Magst)/dMag + 1;
-  CumuN_MIs = malloc(sizeof(double *) * ncomp);
-  for (int i=0; i<ncomp; i++){
-     CumuN_MIs[i] = calloc(nLF, sizeof(double *));
-  }
-  int calcLF = (Isen - Isst > 0) ? 1 : 0;
-  nMIs = get_ML_LF(calcLF, ROMAN, MLfiles, iMag, nMLrel, Minis, MPDs, Mags, Rstars, Minvs, Magst, Magen, dMag, CumuN_MIs, logMass_B, PlogM_cum_norm_B, PlogM_B);
-  // for (int icomp=0; icomp < ncomp; icomp++){
-  //   printf("icomp= %d Minv= %.10f\n",icomp,Minvs[icomp]);
-  // }
-
-    // set y0d for disk normalize
-  y0d[0] = (DISK == 1) ? exp(-R0/Rd[0] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[0]);
-  y0d[1] = (DISK == 1) ? exp(-R0/Rd[1] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[1]);
-  y0d[2] = (DISK == 1) ? exp(-R0/Rd[2] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[2]);
-
-  // normalize ND mass before go into loop
-  double MND;
-  int NSD = getOptiond(argc,argv,"NSD",   1,   3); // 0: wo nuclear disk, 1: w/ nuclear disk by P17, 2: w/ Sormani+21-like NSD
-                                                   // 3: w/ more Sormani+21-like NSD (use input_files/NSD_moments.dat)
-  if (NSD == 1){ // Consider Portail+17's NSD
-    MND  = 2.0e+09;
-    x0ND = 250;
-    y0ND = 125;
-    z0ND =  50;
-  }
-  if (NSD == 2){ // Consider Sormani+21-like NSD
-    MND  = 7.0e+08;
-    x0ND =  74;
-    y0ND =  74;
-    z0ND =  26;
-  }
-  x0ND  = getOptiond(argc,argv,"x0ND",  1, x0ND); 
-  y0ND  = getOptiond(argc,argv,"y0ND",  1, y0ND); 
-  z0ND  = getOptiond(argc,argv,"z0ND",  1, z0ND); 
-  MND   = getOptiond(argc,argv,"MND" ,  1,  MND); 
-  if (NSD > 0){
-    rho0ND = (NSD == 3) ? 1 : 0.25*MND/PI/x0ND/y0ND/z0ND; // Msun/pc^3 is given by calc_rho_each when ND == 3
-    n0MSND = rho0ND * fND_MS * m2nND_MS; // number density of ND MS stars
-    n0RGND = n0MSND * nMS2nRGND; // number density of ND RG stars (for mu calculation)
-    n0ND   = n0MSND + rho0ND * (1 - fND_MS) * m2nND_WD; // number density of ND MS+WD stars
-  }
-  nzND = (zenND - zstND)/dzND + 1.5;
-  nRND = (RenND - RstND)/dRND + 1.5;
-  if (NSD == 3){ // More Sormani+21-like NSD, Use input_files/NSD_moments.dat 
-    logrhoNDs   = (double**)malloc(sizeof(double *) * nzND);
-    vphiNDs     = (double**)malloc(sizeof(double *) * nzND);
-    corRzNDs    = (double**)malloc(sizeof(double *) * nzND);
-    logsigvNDs  = (double***)malloc(sizeof(double *) * nzND);
-    for (int i=0; i<nzND; i++){
-      logrhoNDs[i] = (double*)calloc(nRND, sizeof(double *));
-      vphiNDs[i]   = (double*)calloc(nRND, sizeof(double *));
-      corRzNDs[i]  = (double*)calloc(nRND, sizeof(double *));
-      logsigvNDs[i] = (double**)malloc(sizeof(double *) * nRND);
-      for (int j=0; j<nRND; j++){
-        logsigvNDs[i][j] = (double*)calloc(3, sizeof(double *)); // 3= phi, R, z
-      }
-    }
-    char *fileND = (char*)"input_files/NSD_moments.dat";
-    void store_NSDmoments(char *infile);
-    store_NSDmoments(fileND);
-  }
-
-  // normalize NSC mass before go into loop
-  NSC = getOptiond(argc,argv,"NSC",   1,   0); // 0: wo nuclear star cluster, 1: w/ nuclear star cluster
-  double MNSC = getOptiond(argc,argv,"MNSC" ,  1, 6.1e+07); // Chatzopoulos+15
-  if (NSC > 0){
-    // use same conversion factors as NSD's
-    rho0NSC = (3-gammaNSC)*0.25*MNSC/PI/qNSC; // Msun, not Msun/pc^3
-    n0MSNSC = rho0NSC * fND_MS * m2nND_MS; // number density of NSC MS stars
-    n0RGNSC = n0MSNSC * nMS2nRGND; // number density of NSC RG stars (for mu calculation)
-    n0NSC   = n0MSNSC + rho0NSC * (1 - fND_MS) * m2nND_WD; // number density of NSC MS+WD stars
-    // printf ("NSC: rho= %",);
-  }
-
-  // Read input parameters for loop
-  int    Dmax    = getOptiond(argc,argv,"Dmax", 1, 16000);
-  double fSIMU    = getOptiond(argc,argv,"fSIMU",  1, 0.01); // Default NSIMU = fSIMU x [star count]
-  int VERBOSITY   = getOptiond(argc,argv,"VERBOSITY",  1, 0);
-  int BINARY      = getOptiond(argc,argv,"BINARY",   1,  0);
-  int EXTLAW      = getOptiond(argc,argv,"EXTLAW",   1,  1);
-  int EXTMAP      = getOptiond(argc,argv,"EXTMAP",   1,  1); // Default set to be 1 for public version.
-  if (EXTMAP == 0)
-    EXTMAP = 1;  // EXTMAP == 0 is unavailable in the public version because the extinction map is too heavy to be controlled under git
-  // long   NSIMU    = getOptionl(argc,argv,"NSIMU",  1, 0); // Default: NSIMU = fSIMU x [star count]
-  long   NSIMU    = 0; // Default: NSIMU = fSIMU x [star count]
-  double lst   = getOptiond(argc,argv,"l",  1,  1.875);
-  double len   = getOptiond(argc,argv,"l",  2,  2.125);
-  double bst   = getOptiond(argc,argv,"b",  1, -1.625);
-  double ben   = getOptiond(argc,argv,"b",  2, -1.375);
-  if (lst >= len || bst >= ben){
-    printf ("lst (bst) has to be < len (ben)!\n");
-    exit(1);
-  }
-  if (lst < -9.5 || len > 9.5 || bst < -10.0 || ben > 4.5){
-    printf ("The Gonzalez+12 extinction map covers -9.5 < l < 9.5 and -10 < b < 4.5, and does not cover the (part of) input area!\n");
-    exit(1);
-  }
-  printf("#-------------- Input parameters ---------------\n");
-  printf("#    CenSgrA= %d     (0: GC at (l,b)=(0,0), 1: GC at (l,b)= (%.3f, %.3f))\n", CenSgrA, lSgrA, bSgrA);
-  // printf("# SgrA*(x,y,z)= ( %.3f , %.3f , %.3f ) pc", xyzSgrA[0], xyzSgrA[1], xyzSgrA[2]);
-  printf("#      ROMAN= %d     (0: use VIJHKs and hybrid mass-lumi rel., 1: use JHKsZ086W146F213 and isochrone mass-lumi rel.\n", ROMAN);
-  if (ROMAN == 1)
-    printf("#       iMag= %d     (0: J, 1: H, 2: Ks, 3: Z086, 4: W146, 5: F213)\n", iMag);
-  else
-    printf("#       iMag= %d     (0: V, 1: I, 2: J, 3: H, 4: Ks)\n", iMag);
-  printf("#        NSC= %d     (0: no NSC, 1: Chatzopoulos+15's NSC)\n", NSC);
-  printf("#        NSD= %d     (0: no NSD, 1: Portail+17's NSD, 2: Sormani+22-like NSD, 3: Use Sormani+22's DF's moments)\n", NSD);
-  printf("#     EXTLAW= %d     (0: Alonso-Garcia+17's ext. law , 1: Nishiyama+09's ext. law , 2: Wang&Chen19's law)\n", EXTLAW);
-  printf("#     EXTMAP= %d     (0: 0.0025x0.0025 deg^2 (slowest, unavailable in the public ver.), 1: 0.005x0.005 deg^2, 2: 0.025x0.025 deg^2 (fastest))\n", EXTMAP);
-  printf("#     BINARY= %d     (0: no binary , 1: with binary )\n", BINARY);
-  printf("#  VERBOSITY= %d     (0: no output , 1: output , 2: more output, 3: 2+each extinction)\n", VERBOSITY);
-  printf("#       seed= %ld    (random seed value )\n", seed0);
-  if (NSIMU == 0) printf("#      fSIMU= %.4f  (NSIMU propto AREA*fSIMU )\n", fSIMU);
-
-  // Read Gonzalez+12 extintion map and generate stars each grid inside the input area
-  char line[1000];
-  char *words[105];
-  FILE *fp;
-  char *fileEJK;
-  fileEJK = (EXTMAP == 0) ? "input_files/EJK_G12_S20.dat"    // High resolution (0.0025 x 0.0025 deg^2)
-                          : "input_files/EJK_G12_S20_LR.dat"; // Low resolution (0.005 x 0.005 deg^2 or 0.025 x 0.025 deg^2)
-  if((fp=fopen(fileEJK,"r"))==NULL){
-    printf("can't open %s\n",fileEJK);
-    exit(1);
-  }
-  double dlEJK = 0.025, dbEJK = 0.025; // have to same as the bin width of $fileEJK
-  double dlhalf = 0.5*dlEJK, dbhalf= 0.5*dbEJK;
-  lDs        = (double *)malloc(sizeof(double *) * 1);
-  bDs        = (double *)malloc(sizeof(double *) * 1);
-  double elongation(double azi1, double alt1, double azi2, double alt2);
-  printf("#---- Read extinction map and generate stars each grid ( %.3f x %.3f ) inside %.3f < l < %.3f , %.3f < b < %.3f ----\n",dlEJK,dbEJK,lst,len,bst,ben);
-  int igrids = 0;
-  double allmass = 0, allstars = 0;
-  double ncntall = 0, ncnts = 0, ncntbWD = 0, ncntbCD = 0;
-  double ncntcomp[12] = {}; // should be > ncomp. Prepare 12 just in case
-  double nBD = 0, nMS = 0, nWD = 0, nNS= 0, nBH =  0;
-  int nerror = 0;
-  while (fgets(line,1000,fp) !=NULL){
-    int nwords = split((char*)" ", line, words);
-    if (*words[0] == '#') continue;
-    double lSIMU = atof(words[0]);
-    double bSIMU = atof(words[1]);
-    double ERR  = 1e-10;
-
-    double l1 = (lSIMU - dlhalf);
-    double l2 = (lSIMU + dlhalf);
-    double b1 = (bSIMU - dbhalf);
-    double b2 = (bSIMU + dbhalf);
-    if (l2 - ERR  <= lst || l1 + ERR >= len || b2 - ERR <= bst || b1 + ERR >= ben) continue;
-
-    // Store EJKs within ll < l < lr, bb < b < bt
-    // Some grids are further divided into 100 (EXTMAP==0) or 25 (EXTMAP==1) subgrids by Surot+20
-    double EJKs[101] = {}, areaEJKs[101] = {}, sumareaEJK = 0;
-    double lcens[101] = {}, bcens[101] = {}, dls[101] = {}, dbs[101] = {};
-    int nEJK = 0;
-    double dlEJKsub = (EXTMAP == 0) ? 0.0025 : 0.005;
-    double dbEJKsub = (EXTMAP == 0) ? 0.0025 : 0.005;
-    int nlsub = dlEJK / dlEJKsub + 0.5;
-    int nbsub = dbEJK / dbEJKsub + 0.5;
-    double EJKmax = -99, EJKmin = 99;
-    areaEJKs[nEJK] = 1;
-    sumareaEJK = 1;
-    EJKs[nEJK] = atof(words[2]);
-    nEJK++;
-
-    // Consider Nuclear Disk if  (y, z) reaches (125, 50) x 5 (= 625, 250) at 8 kpc
-    ND = (fabs(lSIMU) < 5 && fabs(bSIMU) < 2) ? NSD : 0;
-
-    //------- Set extinction parameters -----------
-    double DMrc = 14.3955 - 0.0239 * lSIMU + 0.0122*fabs(bSIMU)+0.128; // Eqs(2)-(3) of Nataf+16 
-    lDs[0]    = lSIMU; //
-    bDs[0]    = bSIMU; //
-    int idata = 0;
-    double cosb = cos(bDs[idata]/180.0*PI), sinb = sin(bDs[idata]/180.0*PI), 
-           cosl = cos(lDs[idata]/180.0*PI), sinl = sin(lDs[idata]/180.0*PI);
-    double hscale = 164.0/(fabs(sinb) + 0.0001);  // 164 pc = dust scale height from Nataf+13
-    double Dmean  = pow(10, 0.2*DMrc) * 10;
-    // Calc Alams. Alams refers to A_lambda/E(J-Ks) at this moment
-    //
-    void getEJK2Alams(int EXTLAW, int nlams, double *EJK2Alams, double *lameff, double l, double b);
-    double *Alams;
-    Alams = (double *)calloc(nband, sizeof(double *));
-    getEJK2Alams(EXTLAW, nband, Alams, lameff, lSIMU, bSIMU); // put A_lambda/E(J-Ks) in Alams
-    double AIrc = Alams[iMag]; // AIrc refers to A_iMag/E(J-Ks)
-    for (int j = 0; j < nband; j++){
-      // printf("Alam[%d]/E(J-Ks)= %f\n",j,Alams[j]);
-      Alams[j] /= (1 - exp(-Dmean/hscale));
-    }
-    double AI0  = Alams[iMag]; // 
-
-    //------- Store cumu_rho for each ith comp as a function of distance -----------
-    void calc_rho_each(double D, int idata, double *rhos, double *xyz, double *xyb);  // return rho for each component 
-    double xyz[3] = {}, xyb[2] = {};
-    int  nbin = (NSC > 0 && fabs(lSIMU) < 0.15 && fabs(bSIMU) < 0.10) ? 1.0*Dmax+0.5 
-              : (ND > 0 && fabs(lSIMU) < 0.05 && fabs(bSIMU) < 0.05) ? 0.20*Dmax+0.5 
-              : (ND > 0 && fabs(lSIMU) < 0.10 && fabs(bSIMU) < 0.10) ? 0.10*Dmax+0.5
-              : (ND > 0) ? 0.04*Dmax+0.5 
-              : 0.01*Dmax+0.5;
-    double dD = (double) Dmax/nbin;
-    // Lens   : include REMNANT, mass basis 
-    // Source : only stars, number basis 
-    double *D, **rhoD_S, **cumu_rho_S, *cumu_rho_all_S, *rhos, ***cumu_P_EJKs;
-    D               = (double *)calloc(nbin+1, sizeof(double *));
-    cumu_rho_all_S  = (double *)calloc(nbin+1, sizeof(double *));
-    rhos        = (double *)calloc(ncomp+1, sizeof(double *)); // +1 for NSC
-    rhoD_S      = (double **)malloc(sizeof(double *) * ncomp);
-    cumu_rho_S  = (double **)malloc(sizeof(double *) * ncomp);
-    cumu_P_EJKs = (double ***)malloc(sizeof(double *) * ncomp);
-    for (int i=0; i<ncomp; i++){
-      rhoD_S[i]     = (double *)calloc(nbin+1, sizeof(double *));
-      cumu_rho_S[i] = (double *)calloc(nbin+2, sizeof(double *));
-      cumu_P_EJKs[i] = (double **)malloc(sizeof(double *) * (nbin + 1));
-      for (int j=0; j<nbin+1; j++){
-        cumu_P_EJKs[i][j] = (double *)calloc(nEJK, sizeof(double *));
-      }
-    }
-    double fLF_detect(int nMIs, double Magst, double dMag, double extI, double Imin, double Imax, int idisk);
-    // printf("#----- Number density (min^-2) distribution along (l, b)=( %.3f , %.3f )--------\n",lSIMU,bSIMU);
-    int npri = 10;
-    double SumNSD = 0, SumNSC = 0;
-    for (int ibin=0; ibin<=nbin; ibin++){
-      D[ibin] = (double) ibin/nbin * Dmax;
-      calc_rho_each(D[ibin], idata, rhos, xyz, xyb);
-      double R = sqrt(xyz[0]*xyz[0] + xyz[1]*xyz[1]);
-      // if (ibin%npri ==0) printf ("# %5.0f %5.0f %5.0f \n",D[ibin],R,xyz[2]);
-      double rhosum = 0;
-      double DM  = 5 * log10(0.1*(D[ibin] + 0.1));
-      double EJK2AI  =  AI0 * (1 - exp(-D[ibin]/hscale));
-      // if (R < 100) printf ("%.0f %.0f %.5e %.5e\n",R,xyz[2],n0MSND*rhos[9],n0MSNSC*rhos[10]);
-      SumNSD += n0MSND*rhos[9];
-      SumNSC += n0MSNSC*rhos[10];
-      // if (R < 100) printf ("%.0f %.0f %.5e %.5e\n",R,xyz[2],rho0ND*rhos[9],rho0NSC*rhos[10]);
-      for (int i=0;i<ncomp;i++){
-        double nMS = (i == 8) ? n0MSb*rhos[8] : (i == 9) ? n0MSND*rhos[9] + n0MSNSC*rhos[10] : n0MSd[i]*rhos[i];
-        double rho = (i == 8) ? n0b  *rhos[8] : (i == 9) ? n0ND  *rhos[9] + n0NSC  *rhos[10] : n0d[i]  *rhos[i];
-        if (Isen - Isst > 0){ // if Magrange is given
-          rhoD_S[i][ibin] = nMS * D[ibin] * D[ibin] * STR2MIN2;
-          double fIs = 0, sumwtEJK = 0;
-          double fac2int = -1;
-          for (int iEJK = 0; iEJK < nEJK; iEJK++){
-            double extI = EJK2AI*EJKs[iEJK] + DM;
-            double fIsEJK = areaEJKs[iEJK] * fLF_detect(nMIs, Magst, dMag, extI, Isst, Isen, i);
-            fIs += fIsEJK;
-            if (fIsEJK > 0 && fac2int == -1){
-              fac2int = 1/fIsEJK; // to avoid round error due to too small value
-            }
-            cumu_P_EJKs[i][ibin][iEJK] = fac2int*fIs;  // if (ran < cumu_P_EJKs[iEJK]) ilb = iEJK
-          }
-          rhoD_S[i][ibin] *= fIs / sumareaEJK;
-          // printf (" %.5f,%i,%i,%.5f,%.5f, %.5e\n",fIs,i,ibin,n0MSd[i],rhos[i],rhoD_S[i][ibin]);
-        }else{ // For lens catalog
-          rhoD_S[i][ibin] = rho * D[ibin] * D[ibin] * STR2MIN2;
-          for (int iEJK = 0; iEJK < nEJK; iEJK++){
-            cumu_P_EJKs[i][ibin][iEJK] = (iEJK == 0) ? areaEJKs[iEJK]
-                                       : areaEJKs[iEJK] + cumu_P_EJKs[i][ibin][iEJK-1];
-          }
-        }
-        cumu_rho_S[i][ibin]  = (ibin==0) ? 0 : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD; // not accurate, but to let cumu_rho_S has the same number of arrays
-        // cumu_rho_S[i][ibin]  = (ibin==0) ? 0.5*rhoD_S[i][ibin]*dD : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD;
-        cumu_rho_all_S[ibin] += cumu_rho_S[i][ibin];
-        rhosum += rhoD_S[i][ibin];
-        // if (ibin%npri==0){ 
-        //   printf (" %d: %.1e ",i,rhoD_S[i][ibin]);
-        //   printf ("( %.2e )",cumu_rho_S[i][ibin]);
-        // }
-      }
-      // printf ("\n");
-      // if (ibin%npri==0){ 
-      //     printf (" All: %.1e ",rhosum);
-      //     printf ("( %.2e )\n",cumu_rho_all_S[ibin]);
-      // }
-    }
-    // printf ("# SumNSD= %.5e SumNSC= %.5e NSC/NSD= %.8f\n",SumNSD, SumNSC,SumNSC/SumNSD);
-
-    char filename[60];
-    sprintf(filename, "output_files/distance_dist_l%.4f_b%.4f_EJKs%.3f.csv", lSIMU, bSIMU,EJKs[0]);
-    FILE *file = fopen(filename,"w");
-    if (file == NULL){
-      printf("Problem");
-    }
-    printf("rhoD_S and cumu_rho_S start: (l,b) = (%.4f,%.4f)\n",lSIMU,bSIMU);
-    for (int i=0;i<ncomp;i++){
-      for (int j=0;j<nbin+1;j++){
-        fprintf(file,"%i,%i,%.4f,%.4f\n",i,j,rhoD_S[i][j],cumu_rho_S[i][j]);
-      }
-    }
-    printf("rhoD_S and cumu_rho_S end\n\n");
-    fclose(file);
-
-    
-    free (Alams);  
-    free (D);  
-    free (cumu_rho_all_S);
-    for (int i=0; i<ncomp; i++){
-      for (int j=0; j<nbin+1; j++){
-        free (cumu_P_EJKs[i][j]);
-      }
-      free (rhoD_S[i]    );
-      free (cumu_rho_S[i]);
-      free (cumu_P_EJKs[i]);
-    }
-    free (rhoD_S    );
-    free (cumu_rho_S);
-    free (cumu_P_EJKs);
-    igrids++;
-  }
-  fclose(fp);
-  // printf ("# sumM_MS/sumN_MS= %9.2f / %6.0f = %.6f Msun/*\n", allmass, allstars, allmass/allstars);
-  // printf ("# nerror= %d\n", nerror);
-  // if (BINARY == 1) printf ("# (n_single n_binwide n_binclose)/n_all= ( %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f )\n", ncnts, ncntbWD, ncntbCD, ncntall,ncnts/ncntall,ncntbWD/ncntall,ncntbCD/ncntall);
-  // printf ("# (n_thin1-7 n_thick n_bar n_nsd)/n_all= ( %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f %.6f )\n", ncntcomp[0], ncntcomp[1], ncntcomp[2], ncntcomp[3], ncntcomp[4], ncntcomp[5], ncntcomp[6], ncntcomp[7], ncntcomp[8], ncntcomp[9], ncntall, ncntcomp[0]/ncntall, ncntcomp[1]/ncntall, ncntcomp[2]/ncntall, ncntcomp[3]/ncntall, ncntcomp[4]/ncntall, ncntcomp[5]/ncntall, ncntcomp[6]/ncntall, ncntcomp[7]/ncntall, ncntcomp[8]/ncntall, ncntcomp[9]/ncntall);
-  // printf ("# (n_BD n_MS n_WD n_NS n_BH)/n_all= ( %6.0f %6.0f %6.0f %6.0f %6.0f ) / %6.0f = ( %.6f %.6f %.6f %.6f %.6f )\n", nBD, nMS, nWD, nNS, nBH,ncntall, nBD/ncntall, nMS/ncntall, nWD/ncntall, nNS/ncntall, nBH/ncntall);
-  if (Isen - Isst > 0){
-    for (int i=0; i<ncomp; i++){
-       free(CumuN_MIs[i]);
-    }
-    free(CumuN_MIs);
-  }
-  if (NSD == 3){
-    for (int i=0; i<nzND; i++){
-      for (int j=0; j<nRND; j++){
-        free(logsigvNDs[i][j]);
-      }
-      free(logrhoNDs[i]);
-      free(vphiNDs[i]);
-      free(corRzNDs[i]);
-      free(logsigvNDs[i]);
-    }
-    free(logrhoNDs);
-    free(vphiNDs);
-    free(corRzNDs);
-    free(logsigvNDs);
-  }
-  free(logMass_B       );
-  free(PlogM_cum_norm_B);
-  free(PlogM_B         );
-  free(imptiles_B      );
-  free(lDs);
-  free(bDs);
-  
-  for (int i=0; i<ncomp; i++){
-    free(Minis[i]);
-    free(MPDs[i]);
-    free(Rstars[i]);
-    free(MLfiles[i]);
-  }
-  free(Minis);
-  free(MPDs);
-  free(Rstars);
-  free(Minvs);
-  free(MLfiles);
-  for (int i=0; i<nband; i++){
-    for (int j=0; j<ncomp; j++){
-      free(Mags[i][j]);
-    }
-    free(Mags[i]);
-    free(MAG[i]);
-  }
-  free(Mags);
-  free(MAG);
-  return 0;
-} // end main
-
