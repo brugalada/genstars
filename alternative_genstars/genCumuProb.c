@@ -2122,6 +2122,49 @@ int main(int argc,char **argv)
   y0d[1] = (DISK == 1) ? exp(-R0/Rd[1] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[1]);
   y0d[2] = (DISK == 1) ? exp(-R0/Rd[2] - pow(((double)Rh/R0),nh))  :  exp(-R0/Rd[2]);
 
+  int ndisk = 8;
+  double MVVVd = 0;  // mass in the VVV box when DISK == 2
+  double Mind = 0;  // mass of inner disk (< Rbreak) when DISK == 2
+  for (int i = 0; i< ndisk; i++){
+    int rd = (i == 0) ? Rd[0] : (i < 7) ? Rd[1] : (i == 7) ? Rd[2] : 0;
+    int zdtmp = (hDISK == 0) ? zd[i] : zd45[i];
+    double MVVVtmp = 0;
+    // if (DISK == 2){ // same normalization also when DISK != 2
+      MVVVtmp = rho0d[i] * exp((R0 - Rdbreak)/rd) * 2200*2 * 1400*2 * zd[i] / zdtmp;
+      double ztmp    = 1200.0/zdtmp;  // z of VVV box
+      Mind    += 2 * zdtmp * MVVVtmp / 4400 / 2800 * PI * Rdbreak * Rdbreak;
+      MVVVtmp *= (i < 7) ? 2 * zdtmp * (exp(2*ztmp) - 1)/(exp(2*ztmp) + 1)  
+                         : 2 * zdtmp * (1 - exp(-ztmp));
+      MVVVd   += MVVVtmp;
+    // }
+    double hsigU = (i < 7) ? hsigUt : hsigUT;
+    double hsigW = (i < 7) ? hsigWt : hsigWT;
+    double sigW0 = (i < 7) ? sigW10d * pow((medtauds[i]+0.01)/10.01, betaW) : sigW0td;
+    double sigU0 = (i < 7) ? sigU10d * pow((medtauds[i]+0.01)/10.01, betaU) : sigU0td;
+    printf ("#   Disk%d: %5.2f %4d %3.0f  %3d %5.2f %5.2f %6.0f %6.0f   %.2e %.2e %.2e\n",i+1,medtauds[i], rd, zd[i],zdtmp,sigU0,sigW0,hsigU,hsigW,rho0d[i],n0d[i],n0d[i]-n0MSd[i]);
+  }
+
+  // Crude normalize bulge mass
+  double crude_integrate(double xmax, double ymax, double zmax, int nbun);
+  double massVVVbox = crude_integrate(2200, 1400, 1200, 15); // VVV box defined by Wegg & Gerhard (2013), MNRAS, 435, 1874
+  double massentire = crude_integrate(6000, 3000, 3000, 30); // should include entire bulge
+  double fm1 = 1, fmX = 0;
+  if (addX >= 5){
+    int addXtmp = addX;
+    addX = 0;
+    double mass1all = crude_integrate(6000, 3000, 3000, 30);
+    addX = addXtmp;
+    fm1 = mass1all / massentire;
+    fmX = 1 - fm1;
+  }  
+  double MVVVP17 = 1.32e+10;
+  rho0b = (frho0b * MVVVP17 - MVVVd)/massVVVbox; // normalized by mass in the VVV box by Portail et al. (2017), MNRAS, 465, 1621
+  n0MSb = rho0b * fb_MS * m2nb_MS; // number density of bar MS stars
+  n0RGb = n0MSb * nMS2nRGb; // number density of bar RG stars (for mu calculation)
+  n0b   = n0MSb + rho0b * (1 - fb_MS) * m2nb_WD; // number density of b MS+WD stars
+  massVVVbox *= rho0b;
+  massentire *= rho0b;
+
   // normalize ND mass before go into loop
   double MND;
   int NSD = getOptiond(argc,argv,"NSD",   1,   3); // 0: wo nuclear disk, 1: w/ nuclear disk by P17, 2: w/ Sormani+21-like NSD
@@ -2150,24 +2193,6 @@ int main(int argc,char **argv)
   }
   nzND = (zenND - zstND)/dzND + 1.5;
   nRND = (RenND - RstND)/dRND + 1.5;
-  if (NSD == 3){ // More Sormani+21-like NSD, Use input_files/NSD_moments.dat 
-    logrhoNDs   = (double**)malloc(sizeof(double *) * nzND);
-    vphiNDs     = (double**)malloc(sizeof(double *) * nzND);
-    corRzNDs    = (double**)malloc(sizeof(double *) * nzND);
-    logsigvNDs  = (double***)malloc(sizeof(double *) * nzND);
-    for (int i=0; i<nzND; i++){
-      logrhoNDs[i] = (double*)calloc(nRND, sizeof(double *));
-      vphiNDs[i]   = (double*)calloc(nRND, sizeof(double *));
-      corRzNDs[i]  = (double*)calloc(nRND, sizeof(double *));
-      logsigvNDs[i] = (double**)malloc(sizeof(double *) * nRND);
-      for (int j=0; j<nRND; j++){
-        logsigvNDs[i][j] = (double*)calloc(3, sizeof(double *)); // 3= phi, R, z
-      }
-    }
-    char *fileND = (char*)"input_files/NSD_moments.dat";
-    void store_NSDmoments(char *infile);
-    store_NSDmoments(fileND);
-  }
 
   // normalize NSC mass before go into loop
   NSC = getOptiond(argc,argv,"NSC",   1,   0); // 0: wo nuclear star cluster, 1: w/ nuclear star cluster
@@ -2342,27 +2367,24 @@ int main(int argc,char **argv)
       for (int i=0;i<ncomp;i++){
         double nMS = (i == 8) ? n0MSb*rhos[8] : (i == 9) ? n0MSND*rhos[9] + n0MSNSC*rhos[10] : n0MSd[i]*rhos[i];
         double rho = (i == 8) ? n0b  *rhos[8] : (i == 9) ? n0ND  *rhos[9] + n0NSC  *rhos[10] : n0d[i]  *rhos[i];
-        if (Isen - Isst > 0){ // if Magrange is given
-          rhoD_S[i][ibin] = nMS * D[ibin] * D[ibin] * STR2MIN2;
-          double fIs = 0, sumwtEJK = 0;
-          double fac2int = -1;
-          for (int iEJK = 0; iEJK < nEJK; iEJK++){
-            double extI = EJK2AI*EJKs[iEJK] + DM;
-            double fIsEJK = areaEJKs[iEJK] * fLF_detect(nMIs, Magst, dMag, extI, Isst, Isen, i);
-            fIs += fIsEJK;
-            if (fIsEJK > 0 && fac2int == -1){
-              fac2int = 1/fIsEJK; // to avoid round error due to too small value
-            }
-            cumu_P_EJKs[i][ibin][iEJK] = fac2int*fIs;  // if (ran < cumu_P_EJKs[iEJK]) ilb = iEJK
-          }
-          rhoD_S[i][ibin] *= fIs / sumareaEJK;
+        
+        rhoD_S[i][ibin] = nMS * D[ibin] * D[ibin] * STR2MIN2;
+          // double fIs = 0, sumwtEJK = 0;
+          // double fac2int = -1;
+          // for (int iEJK = 0; iEJK < nEJK; iEJK++){
+          //   double extI = EJK2AI*EJKs[iEJK] + DM;
+          //   double fIsEJK = areaEJKs[iEJK] * fLF_detect(nMIs, Magst, dMag, extI, Isst, Isen, i);
+          //   fIs += fIsEJK;
+          //   if (fIsEJK > 0 && fac2int == -1){
+          //     fac2int = 1/fIsEJK; // to avoid round error due to too small value
+          //   }
+          //   cumu_P_EJKs[i][ibin][iEJK] = fac2int*fIs;  // if (ran < cumu_P_EJKs[iEJK]) ilb = iEJK
+          // }
+          // rhoD_S[i][ibin] *= fIs / sumareaEJK;
           // printf (" %.5f,%i,%i,%.5f,%.5f, %.5e\n",fIs,i,ibin,n0MSd[i],rhos[i],rhoD_S[i][ibin]);
-        }else{ // For lens catalog
-          rhoD_S[i][ibin] = rho * D[ibin] * D[ibin] * STR2MIN2;
-          for (int iEJK = 0; iEJK < nEJK; iEJK++){
-            cumu_P_EJKs[i][ibin][iEJK] = (iEJK == 0) ? areaEJKs[iEJK]
-                                       : areaEJKs[iEJK] + cumu_P_EJKs[i][ibin][iEJK-1];
-          }
+        for (int iEJK = 0; iEJK < nEJK; iEJK++){
+          cumu_P_EJKs[i][ibin][iEJK] = (iEJK == 0) ? areaEJKs[iEJK]
+                                      : areaEJKs[iEJK] + cumu_P_EJKs[i][ibin][iEJK-1];
         }
         cumu_rho_S[i][ibin]  = (ibin==0) ? 0 : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD; // not accurate, but to let cumu_rho_S has the same number of arrays
         // cumu_rho_S[i][ibin]  = (ibin==0) ? 0.5*rhoD_S[i][ibin]*dD : cumu_rho_S[i][ibin-1] + 0.5*(rhoD_S[i][ibin-1] + rhoD_S[i][ibin]) * dD;
@@ -2381,13 +2403,14 @@ int main(int argc,char **argv)
     }
     // printf ("# SumNSD= %.5e SumNSC= %.5e NSC/NSD= %.8f\n",SumNSD, SumNSC,SumNSC/SumNSD);
 
-    char filename[60];
-    sprintf(filename, "output_files/distance_dist_l%.4f_b%.4f_EJKs%.3f.csv", lSIMU, bSIMU,EJKs[0]);
+    char filename[100];
+    sprintf(filename, "output_files/distance_dist_l%.4f_b%.4f_EJKs%.3f_AI0%.3f,hscale%.4f.csv", lSIMU, bSIMU,EJKs[0],AI0,hscale);
     FILE *file = fopen(filename,"w");
     if (file == NULL){
       printf("Problem");
     }
     printf("rhoD_S and cumu_rho_S start: (l,b) = (%.4f,%.4f)\n",lSIMU,bSIMU);
+    fprintf(file,"icomp,i,rhoD_S,cumu_rho_S\n");
     for (int i=0;i<ncomp;i++){
       for (int j=0;j<nbin+1;j++){
         fprintf(file,"%i,%i,%.4f,%.4f\n",i,j,rhoD_S[i][j],cumu_rho_S[i][j]);
@@ -2406,7 +2429,6 @@ int main(int argc,char **argv)
       }
       free (rhoD_S[i]    );
       free (cumu_rho_S[i]);
-      free (ibinptiles_S[i]);
       free (cumu_P_EJKs[i]);
     }
     free (rhoD_S    );
